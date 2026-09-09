@@ -25,6 +25,18 @@ services:
       # just as easily be pointed at http://localhost:3000.
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       LOG_LEVEL: INFO
+      CASE_DB_PATH: /app/backend/.runtime/cases.sqlite3
+      # optional (default): lightweight demo -- runs fully without the IBM
+      #   AML dataset/model; docker-entrypoint.sh logs what's missing and
+      #   /api/aml/* explains it per-request, but the container still starts.
+      # required: refuse to start unless data/aml/transfers_inr.csv and
+      #   ml/models/aml_baseline.joblib are both already present (prepare
+      #   them first -- see data/aml/README.md, ml/aml_baseline/README.md).
+      #   Override per-run instead of editing this file, e.g.:
+      #     AML_MODE=required docker compose up --build -d
+      AML_MODE: ${AML_MODE:-optional}
+    volumes:
+      - case-data:/app/backend/.runtime
     healthcheck:
       test:
         [
@@ -38,3 +50,6 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+
+volumes:
+  case-data:

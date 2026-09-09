@@ -58,31 +58,83 @@ class Finding:
     backed by these specific transactions."""
 
     pattern: str
-    source_account: str
-    collector_account: str
-    intermediary_accounts: tuple[str, ...]
-    fan_out_transaction_ids: tuple[str, ...]
-    convergence_transaction_ids: tuple[str, ...]
-    window_start: datetime.datetime
-    window_end: datetime.datetime
-    score: float
-    score_method: str
+    involved_accounts: tuple[str, ...] = ()
+    evidence_transaction_ids: tuple[str, ...] = ()
+    window_start: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+    window_end: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+    measured_signals: dict = field(default_factory=dict)
+    rule_version: str = "1.0.0"
+    explanation: str = ""
+    score: float = 0.0
+    score_method: str = ""
+
+    # Legacy fields for backward compatibility with existing fan-out/convergence consumers
+    source_account: str = ""
+    collector_account: str = ""
+    intermediary_accounts: tuple[str, ...] = ()
+    fan_out_transaction_ids: tuple[str, ...] = ()
+    convergence_transaction_ids: tuple[str, ...] = ()
     evidence: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Sync evidence and measured_signals
+        signals = self.measured_signals or self.evidence
+        if self.evidence != signals:
+            object.__setattr__(self, "evidence", signals)
+        if self.measured_signals != signals:
+            object.__setattr__(self, "measured_signals", signals)
+
+        # Sync involved_accounts if empty but legacy accounts provided
+        if not self.involved_accounts:
+            accs: list[str] = []
+            if self.source_account and self.source_account not in accs:
+                accs.append(self.source_account)
+            for acc in self.intermediary_accounts:
+                if acc not in accs:
+                    accs.append(acc)
+            if self.collector_account and self.collector_account not in accs:
+                accs.append(self.collector_account)
+            object.__setattr__(self, "involved_accounts", tuple(accs))
+
+        # Sync evidence_transaction_ids if empty but legacy tx ids provided
+        if not self.evidence_transaction_ids:
+            tx_ids: list[str] = []
+            for tid in self.fan_out_transaction_ids:
+                if tid not in tx_ids:
+                    tx_ids.append(tid)
+            for tid in self.convergence_transaction_ids:
+                if tid not in tx_ids:
+                    tx_ids.append(tid)
+            object.__setattr__(self, "evidence_transaction_ids", tuple(tx_ids))
+
+        # Ensure explanation if empty
+        if not self.explanation and self.pattern == "fan_out_convergence":
+            expl = (
+                f"Fan-out from {self.source_account} to {len(self.intermediary_accounts)} intermediaries "
+                f"followed by convergence into {self.collector_account}."
+            )
+            object.__setattr__(self, "explanation", expl)
 
     def to_dict(self) -> dict:
         return {
             "pattern": self.pattern,
+            "involved_accounts": list(self.involved_accounts),
+            "evidence_transaction_ids": list(self.evidence_transaction_ids),
+            "window_start": self.window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "window_end": self.window_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "measured_signals": self.measured_signals,
+            "rule_version": self.rule_version,
+            "explanation": self.explanation,
+            "score": self.score,
+            "score_method": self.score_method,
+            "evidence": self.evidence,
+            "score_is_not_a_probability": True,
+            # Legacy fields
             "source_account": self.source_account,
             "collector_account": self.collector_account,
             "intermediary_accounts": list(self.intermediary_accounts),
             "fan_out_transaction_ids": list(self.fan_out_transaction_ids),
             "convergence_transaction_ids": list(self.convergence_transaction_ids),
-            "window_start": self.window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "window_end": self.window_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "score": self.score,
-            "score_method": self.score_method,
-            "evidence": self.evidence,
-            "score_is_not_a_probability": True,
         }
 
 
@@ -192,6 +244,22 @@ def detect_fan_out_convergence(
                 score = round(min(1.0, max(0.0, score)), 4)
 
                 key = (source, collector, tuple(converging))
+                signals = {
+                    "intermediary_ratio": round(intermediary_ratio, 4),
+                    "amount_conservation": round(amount_conservation, 4),
+                    "time_compactness": round(time_compactness, 4),
+                    "total_fan_out_amount": total_fan_out_amount,
+                    "total_convergence_amount": total_convergence_amount,
+                    "window_span_seconds": window_span_seconds,
+                    "fan_out_window_seconds": config.fan_out_window_seconds,
+                    "convergence_window_seconds": config.convergence_window_seconds,
+                }
+                explanation = (
+                    f"Rapid fan-out from {source} across {len(converging)} intermediaries followed by "
+                    f"convergence onto {collector} within {window_span_seconds:.1f}s "
+                    f"(amount conservation: {amount_conservation:.1%})."
+                )
+
                 candidate = Finding(
                     pattern="fan_out_convergence",
                     source_account=source,
@@ -203,16 +271,10 @@ def detect_fan_out_convergence(
                     window_end=window_end,
                     score=score,
                     score_method=_SCORE_METHOD,
-                    evidence={
-                        "intermediary_ratio": round(intermediary_ratio, 4),
-                        "amount_conservation": round(amount_conservation, 4),
-                        "time_compactness": round(time_compactness, 4),
-                        "total_fan_out_amount": total_fan_out_amount,
-                        "total_convergence_amount": total_convergence_amount,
-                        "window_span_seconds": window_span_seconds,
-                        "fan_out_window_seconds": config.fan_out_window_seconds,
-                        "convergence_window_seconds": config.convergence_window_seconds,
-                    },
+                    rule_version="1.0.0",
+                    explanation=explanation,
+                    measured_signals=signals,
+                    evidence=signals,
                 )
 
                 existing = findings.get(key)

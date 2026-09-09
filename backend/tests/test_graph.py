@@ -57,7 +57,7 @@ def test_graph_empty_transactions(client, monkeypatch, tmp_path):
     _use_transactions(monkeypatch, tmp_path, [])
     resp = client.get("/api/graph")
     assert resp.status_code == 200
-    assert resp.json() == {"nodes": [], "edges": []}
+    assert resp.json() == {"nodes": [], "edges": [], "findings": []}
 
 
 def test_graph_repeated_account_pairs_not_collapsed(client, monkeypatch, tmp_path):
@@ -168,6 +168,32 @@ def test_graph_risk_fields_null_unassessed_when_no_pattern_matches(client, monke
     for node in body["nodes"]:
         assert node["risk_score"] is None
         assert node["risk_level"] == "UNASSESSED"
+
+
+def test_graph_reports_real_findings_for_canonical_fixture(client):
+    # findings must be genuine ml/rules evidence, not reconstructed from
+    # node risk_score/risk_level -- verified here against the same known
+    # canonical result backend/docs/integration-contract.md documents.
+    body = client.get("/api/graph").json()
+    assert len(body["findings"]) == 1
+    finding = body["findings"][0]
+    assert finding["pattern"] == "fan_out_convergence"
+    assert finding["source_account"] == "ACC_A"
+    assert finding["collector_account"] == "ACC_X"
+    assert set(finding["intermediary_accounts"]) == {"ACC_B", "ACC_C", "ACC_D"}
+    assert finding["score"] == pytest.approx(0.9317)
+    assert len(finding["fan_out_transaction_ids"]) == 3
+    assert len(finding["convergence_transaction_ids"]) == 3
+    assert isinstance(finding["evidence"], dict) and finding["evidence"]
+
+
+def test_graph_findings_empty_when_no_pattern_matches(client, monkeypatch, tmp_path):
+    transactions = [
+        {"id": "TX_1", "sender": "ACC_A", "receiver": "ACC_B", "amount": 100, "timestamp": "2026-01-01T00:00:00Z"},
+    ]
+    _use_transactions(monkeypatch, tmp_path, transactions)
+    body = client.get("/api/graph").json()
+    assert body["findings"] == []
 
 
 def test_cors_allows_configured_frontend_origin(client):

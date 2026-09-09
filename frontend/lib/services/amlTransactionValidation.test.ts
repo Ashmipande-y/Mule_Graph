@@ -28,6 +28,7 @@ describe("validateAmlForm: valid entry", () => {
       currency: "INR",
       timestamp: "2022-09-01T00:05:00Z",
       paymentFormat: "ACH",
+      isLabeledLaundering: false,
     });
   });
 });

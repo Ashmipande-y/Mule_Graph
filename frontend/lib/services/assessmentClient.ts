@@ -6,6 +6,7 @@ import type {
 } from "@/types/api";
 import type { AssessmentAccountResult, AssessmentPatternResult, AssessmentResult } from "@/types/assessment";
 import type { Transaction } from "@/types/transaction";
+import { mapApiFinding } from "./apiClient";
 
 /**
  * The exact endpoint this frontend expects for batch risk assessment. Not
@@ -82,6 +83,7 @@ function mapResponse(api: ApiAssessmentResponse, submitted: readonly Transaction
     accountsRequiringReview:
       api.accounts_requiring_review ?? accounts.filter((a) => a.requiresReview).map((a) => a.accountId),
     patterns: (api.patterns ?? []).map(mapPattern),
+    findings: (api.findings ?? []).map(mapApiFinding),
     transactions: [...submitted],
   };
 }

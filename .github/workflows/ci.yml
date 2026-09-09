@@ -1,0 +1,214 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch/PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.14"
+  NODE_VERSION: "26"
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Lightweight checks: no optional/large artifacts required. These are
+  # the checks that must always run and always pass -- if any of them
+  # goes red, something in the core, always-available flow is broken.
+  # ---------------------------------------------------------------------
+
+  fixture-validation:
+    name: Canonical fixture validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Validate demo_transactions.json / graph.example.json agree
+        run: python scripts/validate_demo.py
+
+  ml-rules-tests:
+    name: ml/rules tests (stdlib only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Run ml/rules tests (no third-party dependencies)
+        run: python -m unittest discover -s ml/tests -t ml -v
+
+  backend-tests:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install backend dependencies (lightweight set only)
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/python -m pip install --upgrade pip
+          backend/.venv/bin/python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Run backend test suite
+        run: backend/.venv/bin/python -m pytest backend/tests -v -rs
+      - name: Report artifact-dependent skips
+        if: always()
+        run: |
+          echo "### Backend test artifact availability" >> "$GITHUB_STEP_SUMMARY"
+          echo "This job installs only backend/requirements.txt + requirements-dev.txt (no xgboost/pandas)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Tests needing ml/models/xgb_baseline.joblib or data/aml/transfers_inr.csv self-skip -- see the pytest -rs summary above for exact reasons." >> "$GITHUB_STEP_SUMMARY"
+
+  frontend-checks:
+    name: Frontend checks (lint, types, unit tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+      - name: Unit tests (vitest)
+        working-directory: frontend
+        run: npm test
+      - name: Production build
+        working-directory: frontend
+        run: npm run build
+
+  # ---------------------------------------------------------------------
+  # Artifact-dependent ML checks: need large, gitignored, manually-prepared
+  # local data/model files (see data/aml/README.md, ml/xgb_baseline/README.md,
+  # ml/aml_baseline/README.md) that a fresh checkout never has. The Python
+  # packages themselves (pandas/xgboost/etc., from ml/requirements.txt) are
+  # always installed so the test files import cleanly; the tests' own
+  # DATA_PRESENT / MODEL_PRESENT skip guards report clearly (via pytest/
+  # unittest's native skip reporting) whenever the actual data/model files
+  # are absent, rather than erroring or silently "passing" nothing.
+  # ---------------------------------------------------------------------
+
+  ml-optional-tests:
+    name: ml/xgb_baseline + ml/aml_baseline tests (artifact-dependent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: ml/requirements.txt
+      - name: Install ml dependencies
+        run: |
+          python -m venv ml/.venv
+          ml/.venv/bin/python -m pip install --upgrade pip
+          ml/.venv/bin/python -m pip install -r ml/requirements.txt
+      - name: Report artifact availability
+        run: |
+          echo "### ML optional-artifact availability" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f ml/data/raw/creditcard_openml_1597.parquet ]; then
+            echo "- ml/xgb_baseline raw dataset: **present**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- ml/xgb_baseline raw dataset: **absent** -- LoadRawTests/ChronologicalSplitTests will skip" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f ml/models/xgb_baseline.joblib ]; then
+            echo "- ml/xgb_baseline trained model: **present**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- ml/xgb_baseline trained model: **absent** -- InferenceTests will skip" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f ml/data/aml/splits/train_transactions.csv ]; then
+            echo "- ml/aml_baseline dataset splits: **present**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- ml/aml_baseline dataset splits: **absent** -- dataset-dependent tests will skip" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f ml/models/aml_baseline.joblib ]; then
+            echo "- ml/aml_baseline trained model: **present**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- ml/aml_baseline trained model: **absent** -- model-dependent tests will skip" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: ml/xgb_baseline tests
+        run: PYTHONPATH=ml ml/.venv/bin/python -m unittest discover -s ml/xgb_baseline/tests -t ml -v
+      - name: ml/aml_baseline tests
+        run: PYTHONPATH=ml ml/.venv/bin/python -m unittest discover -s ml/aml_baseline/tests -t ml -v
+
+  # ---------------------------------------------------------------------
+  # Browser integration tests: the full Next.js/FastAPI application,
+  # started fresh for this job on isolated ports (see
+  # frontend/playwright.config.ts) -- never a job that could "pass" only
+  # because it silently reused someone else's already-running server.
+  # This is the check step 4 of the assessment-integration task means by
+  # "the main assessment flow would fail CI if its endpoint disappeared":
+  # e2e/assessment.spec.ts actually calls POST /api/assess through the
+  # real UI, so a regression or removal of that endpoint fails this job.
+  # ---------------------------------------------------------------------
+
+  e2e:
+    name: Browser integration tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-checks]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-xgb.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend dependencies
+        # Includes the optional xgb-score/AML stack (superset of
+        # requirements.txt) so those endpoints work fully in this job on
+        # the rare environment where their artifacts are actually present
+        # -- not needed for pytest itself (no requirements-dev.txt here).
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/python -m pip install --upgrade pip
+          backend/.venv/bin/python -m pip install -r backend/requirements-xgb.txt
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Report AML e2e artifact availability
+        run: |
+          echo "### AML e2e artifact availability" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f data/aml/transfers_inr.csv ] && [ -f ml/models/aml_baseline.joblib ]; then
+            echo "- data/aml/transfers_inr.csv and ml/models/aml_baseline.joblib: **present** -- e2e/aml.spec.ts will run" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- data/aml/transfers_inr.csv and/or ml/models/aml_baseline.joblib: **absent** -- e2e/aml.spec.ts will report itself skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Run Playwright tests
+        working-directory: frontend
+        run: npx playwright test
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14

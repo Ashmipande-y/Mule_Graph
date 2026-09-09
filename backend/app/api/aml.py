@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import datetime
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.adapters import aml_baseline, aml_rules
 from app.adapters.aml_baseline import AmlModelUnavailableError
+from app.services.event_bus import get_event_bus
+from app.services.metrics import get_metrics_collector, mask_account_id, sanitize_transaction_for_logging
 from app.schemas import (
     AmlAssessRequest,
     AmlAssessResponse,
@@ -25,6 +28,8 @@ from app.schemas import (
     AmlDatasetSummaryResponse,
     AmlGraphNode,
     AmlGraphResponse,
+    AmlLabeledNetwork,
+    AmlLabeledNetworksResponse,
     AmlRulesFinding,
     AmlSessionCommitRequest,
     AmlSessionCommitResponse,
@@ -50,6 +55,7 @@ def _record_to_out(record: AmlRecord) -> AmlTransactionOut:
         currency=record.currency,
         timestamp=record.timestamp,
         payment_format=record.payment_format,
+        is_labeled_laundering=record.id in aml_dataset.labeled_laundering_ids(),
     )
 
 
@@ -163,6 +169,85 @@ def get_graph(
     )
 
 
+@router.get("/labeled-networks", response_model=AmlLabeledNetworksResponse)
+def get_labeled_networks(
+    max_results: int = Query(default=8, ge=1, le=20),
+) -> AmlLabeledNetworksResponse:
+    """Real neighborhoods discovered from the IBM AMLworld benchmark's own
+    ground-truth is_laundering labels -- NOT ml/rules output. ml/rules'
+    fan-out/convergence detector finds zero additional patterns anywhere
+    else in this dataset at its documented timescale (verified by an
+    exhaustive structural pre-filter + full-size neighborhood scan during
+    development; AML_DETECTOR_CONFIG was deliberately not re-tuned to
+    manufacture a hit). This endpoint surfaces a different, independent,
+    equally real notion of "suspicious": the benchmark's published answer
+    key. ml_rules_risk_level on each result is the heuristic detector's own
+    (often UNASSESSED) conclusion about the same neighborhood, shown for
+    honest side-by-side comparison, not suppressed when it disagrees.
+    """
+    source_note = (
+        "IBM AMLworld benchmark ground-truth is_laundering labels -- the published dataset's own "
+        "answer key, not this app's ml/rules detector output. ml_rules_risk_level shows what the "
+        "heuristic detector independently concludes about the same neighborhood, which is often "
+        "UNASSESSED even when the ground truth says laundering -- absence of a rules-based finding "
+        "is not evidence of safety."
+    )
+
+    try:
+        labeled_ids = aml_dataset.labeled_laundering_ids()
+    except AmlDatasetError as exc:
+        logger.error("AML labels unavailable: %s", exc)
+        raise HTTPException(status_code=500, detail=f"AML dataset is unavailable: {exc}") from exc
+
+    if not labeled_ids:
+        return AmlLabeledNetworksResponse(source_note=source_note, networks=[])
+
+    try:
+        records = aml_dataset.all_records_sorted()
+    except AmlDatasetError as exc:
+        logger.error("AML dataset unavailable: %s", exc)
+        raise HTTPException(status_code=500, detail=f"AML dataset is unavailable: {exc}") from exc
+
+    counts: dict[str, int] = {}
+    for record in records:
+        if record.id not in labeled_ids:
+            continue
+        counts[record.sender] = counts.get(record.sender, 0) + 1
+        counts[record.receiver] = counts.get(record.receiver, 0) + 1
+    ranked_candidates = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+
+    networks: list[AmlLabeledNetwork] = []
+    covered_nodes: set[str] = set()
+    for seed, labeled_count in ranked_candidates:
+        if len(networks) >= max_results:
+            break
+        if seed in covered_nodes:
+            # Already inside an earlier, higher-ranked result's neighborhood
+            # -- skip to avoid presenting near-duplicate views of one cluster.
+            continue
+        try:
+            neighborhood = aml_dataset.get_neighborhood(account=seed)
+        except AmlDatasetError as exc:
+            logger.error("AML dataset unavailable: %s", exc)
+            raise HTTPException(status_code=500, detail=f"AML dataset is unavailable: {exc}") from exc
+
+        _, account_risk = aml_rules.assess_neighborhood(neighborhood.edges)
+        risk = account_risk.get(seed)
+
+        networks.append(
+            AmlLabeledNetwork(
+                seed_account=seed,
+                labeled_laundering_transaction_count=labeled_count,
+                account_count=len(neighborhood.nodes),
+                edge_count=len(neighborhood.edges),
+                ml_rules_risk_level=risk.risk_level if risk is not None else "UNASSESSED",
+            )
+        )
+        covered_nodes.update(neighborhood.nodes)
+
+    return AmlLabeledNetworksResponse(source_note=source_note, networks=networks)
+
+
 @router.post("/assess", response_model=AmlAssessResponse)
 def assess(request: AmlAssessRequest) -> AmlAssessResponse:
     """Scores proposed transactions -- never commits them (see
@@ -184,14 +269,29 @@ def assess(request: AmlAssessRequest) -> AmlAssessResponse:
         logger.error("AML dataset unavailable: %s", exc)
         raise HTTPException(status_code=500, detail=f"AML dataset is unavailable: {exc}") from exc
 
+    t0 = time.time()
     try:
         results = aml_baseline.score_transactions(targets, history)
     except AmlModelUnavailableError as exc:
         logger.error("AML baseline model unavailable: %s", exc)
         raise HTTPException(status_code=503, detail=f"the AML baseline model is not available on this server: {exc}") from exc
 
+    duration_ms = (time.time() - t0) * 1000
+    get_metrics_collector().record_analysis_duration("aml_assess", duration_ms)
+
     if not results:
         raise HTTPException(status_code=500, detail="scoring produced no results")
+
+    # Publish live operational event
+    get_event_bus().publish(
+        event_type="assessment_completed",
+        data={
+            "assessment_type": "aml_batch",
+            "transaction_count": len(results),
+            "high_risk_count": sum(1 for r in results if r.get("is_laundering")),
+            "duration_ms": round(duration_ms, 2),
+        },
+    )
 
     return AmlAssessResponse(
         assessed_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -232,13 +332,45 @@ def commit_session_transactions(request: AmlSessionCommitRequest) -> AmlSessionC
     ids_in_request: set[str] = set()
     for record in records:
         if record.id in known_ids:
+            get_metrics_collector().record_ingestion_failure("id_already_in_dataset")
             raise HTTPException(status_code=409, detail=f"transaction id already exists: {record.id}")
         if record.id in ids_in_request:
+            get_metrics_collector().record_ingestion_failure("duplicate_id_in_request")
             raise HTTPException(status_code=409, detail=f"duplicate transaction id within this request: {record.id}")
         ids_in_request.add(record.id)
 
+    bus = get_event_bus()
     for record in records:
         aml_session.commit(record)
+        # Emit real-time transaction_committed event
+        bus.publish(
+            event_type="transaction_committed",
+            data={
+                "transaction_id": record.id,
+                "sender_masked": mask_account_id(record.sender),
+                "receiver_masked": mask_account_id(record.receiver),
+                "amount_paise": record.amount_paise,
+                "currency": record.currency,
+                "timestamp": record.timestamp,
+                "payment_format": record.payment_format,
+            },
+        )
+
+    # Privacy-safe routine log
+    sanitized_samples = [
+        sanitize_transaction_for_logging(
+            {
+                "id": r.id,
+                "amount": r.amount_paise,
+                "timestamp": r.timestamp,
+                "sender": r.sender,
+                "receiver": r.receiver,
+                "payment_format": r.payment_format,
+            }
+        )
+        for r in records
+    ]
+    logger.info("Committed %d session transactions (sanitized): %s", len(records), sanitized_samples)
 
     return AmlSessionCommitResponse(
         committed=[_record_to_out(r) for r in records],

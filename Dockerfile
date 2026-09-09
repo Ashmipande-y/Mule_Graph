@@ -46,12 +46,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY backend/app ./backend/app
 COPY data/demo_transactions.json ./data/demo_transactions.json
-COPY data/aml/transfers_inr.csv ./data/aml/transfers_inr.csv
+# Directory-level COPY, not a specific-file COPY: both are optional, large,
+# gitignored local artifacts (see data/aml/README.md, ml/models/README.md)
+# that a fresh checkout never has. A specific-file COPY errors the whole
+# build when its source is missing; copying the directory succeeds whether
+# or not the optional file inside it is actually present (Dockerfile.dockerignore
+# still restricts what's visible to exactly the known optional filenames --
+# this isn't a broader COPY than before, just one that tolerates absence).
+# `ml/models/README.md` (tracked) guarantees the `ml/models` directory
+# itself exists even when both `.joblib` files are absent.
+COPY data/aml/ ./data/aml/
 COPY ml/rules ./ml/rules
 COPY ml/xgb_baseline ./ml/xgb_baseline
 COPY ml/aml_baseline ./ml/aml_baseline
-COPY ml/models/xgb_baseline.joblib ./ml/models/xgb_baseline.joblib
-COPY ml/models/aml_baseline.joblib ./ml/models/aml_baseline.joblib
+COPY ml/models/ ./ml/models/
 
 # --- Frontend: traced standalone server output only -- no source, no dev
 # dependencies, no full node_modules (next.config.ts: output: "standalone") ---
@@ -74,6 +82,7 @@ ENV CORS_ORIGINS=http://localhost:3000 \
 
 RUN groupadd --gid 10001 appuser \
     && useradd --uid 10001 --gid appuser --no-create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/backend/.runtime \
     && chown -R appuser:appuser /app
 USER appuser
 

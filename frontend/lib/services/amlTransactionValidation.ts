@@ -1,8 +1,8 @@
 import type { AmlPaymentFormat, AmlTransaction } from "@/types/aml";
 import { inrStringToPaise } from "./amlMoney";
-import { BASE_TIMEZONE_OPTIONS, localDateTimeToUtcIso } from "./transactionValidation";
+import { BASE_TIMEZONE_OPTIONS, localDateTimeToUtcIso, withBrowserTimezone } from "./transactionValidation";
 
-export { BASE_TIMEZONE_OPTIONS };
+export { BASE_TIMEZONE_OPTIONS, withBrowserTimezone };
 
 export const PAYMENT_FORMATS: AmlPaymentFormat[] = ["ACH", "Wire"];
 
@@ -129,6 +129,7 @@ export function validateAmlForm(values: AmlFormValues, options: ValidateAmlOptio
       currency: "INR",
       timestamp,
       paymentFormat: values.paymentFormat,
+      isLabeledLaundering: false,
     },
   };
 }

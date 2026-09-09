@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Info, Loader2, PlayCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Brand } from "@/components/shared/Brand";
 import { BackendUrlEditor } from "@/components/layouts/BackendUrlEditor";
 import { XGB_SCORE_SAMPLES } from "@/lib/services/xgbSamples";
 import { postXgbScore, XgbScoreApiError } from "@/lib/services/apiClient";
@@ -71,15 +69,10 @@ export function XgbScoreTool() {
     result.isFraud === sample.modelIsFraud;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-panel px-4">
-        <div className="flex items-center gap-3">
-          <Brand />
-          <span className="text-xs text-muted-foreground">ML Tools / XGBoost Card-Fraud Model</span>
-        </div>
-        <Link href="/layouts" className="text-xs font-medium text-primary hover:underline">
-          Back to investigation layouts
-        </Link>
+    <div className="flex h-full flex-col overflow-auto bg-background text-foreground">
+      <header className="flex h-14 shrink-0 items-center border-b border-border px-4">
+        <h1 className="text-sm font-semibold text-foreground">Tools</h1>
+        <span className="ml-3 text-xs text-muted-foreground">XGBoost Card-Fraud Model</span>
       </header>
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-8">

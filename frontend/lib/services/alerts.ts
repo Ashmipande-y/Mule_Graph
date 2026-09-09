@@ -15,9 +15,21 @@ function alertId(finding: Finding): string {
 
 /**
  * An alert becomes visible only once the transaction that completes its
- * evidence (the latest convergence transfer) has been revealed by replay.
+ * evidence (the latest convergence transfer) is present in `revealedTransactions`
+ * -- during replay (simulation) that means "revealed so far"; for a one-shot
+ * dataset (live, or any other non-replay source) it means "present in this
+ * snapshot at all," which every finding's evidence trivially satisfies since
+ * the detector only ever produced findings from transactions in that same set.
+ *
+ * `isReplayPosition` controls whether `revealedAtStep` reports a real replay
+ * step (simulation) or `null` (a one-shot snapshot has no meaningful "step
+ * number" -- reporting one would misrepresent live data as replay progress).
  */
-export function deriveAlerts(findings: readonly Finding[], revealedTransactions: readonly Transaction[]): Alert[] {
+export function deriveAlerts(
+  findings: readonly Finding[],
+  revealedTransactions: readonly Transaction[],
+  options: { isReplayPosition: boolean } = { isReplayPosition: true },
+): Alert[] {
   const revealedIndexById = new Map(revealedTransactions.map((tx, index) => [tx.id, index]));
 
   return findings
@@ -36,7 +48,9 @@ export function deriveAlerts(findings: readonly Finding[], revealedTransactions:
         finding,
         level: riskLevelForScore(finding.score),
         revealedByTransactionId,
-        revealedAtStep: stepIndex !== undefined ? stepIndex + 1 : revealedTransactions.length,
+        revealedAtStep: options.isReplayPosition
+          ? (stepIndex !== undefined ? stepIndex + 1 : revealedTransactions.length)
+          : null,
         title: "Fan-out / convergence pattern detected",
         summary:
           `${labelFor(finding.sourceAccount)} fanned funds out to ${finding.intermediaryAccounts.length} ` +

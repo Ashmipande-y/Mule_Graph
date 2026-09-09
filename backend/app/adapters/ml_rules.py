@@ -29,6 +29,7 @@ __all__ = [
     "Finding",
     "MlRulesError",
     "assess_accounts",
+    "evaluate_transactions",
 ]
 
 
@@ -43,11 +44,16 @@ def _transactions_from_records(records: Sequence[dict]) -> list[Transaction]:
         raise MlRulesError(str(exc)) from exc
 
 
-def assess_accounts(records: Sequence[dict]) -> dict[str, AccountRisk]:
-    """Run the Stage 1 fan-out/convergence detector over the given records.
+def evaluate_transactions(records: Sequence[dict]) -> tuple[list[Transaction], list[Finding], dict[str, AccountRisk]]:
+    """Run the Stage 1 fan-out/convergence detector over the given records,
+    returning the parsed transactions, the network-level findings, and the
+    account-level risk rollup -- the full evidence set `POST /api/assess`
+    needs (both `patterns` and `accounts` in its response), not just the
+    account rollup `assess_accounts` (below) exposes for `GET /api/graph`.
 
-    `records` must already be validated (see app/services/graph.py) —
-    this only re-parses them into the ml/rules Transaction type.
+    `records` must already be validated (see
+    `app.services.graph.validate_transactions`) — this only re-parses them
+    into the ml/rules Transaction type.
 
     There is no ingestion/replay endpoint yet (Stage 2), so this evaluates
     "as of" the latest transaction timestamp present in `records`: the
@@ -57,7 +63,16 @@ def assess_accounts(records: Sequence[dict]) -> dict[str, AccountRisk]:
     """
     transactions = _transactions_from_records(records)
     if not transactions:
-        return {}
+        return [], [], {}
     as_of = max(tx.timestamp for tx in transactions)
     findings = evaluate_at(transactions, as_of)
-    return account_risk_from_findings(findings)
+    account_risk = account_risk_from_findings(findings)
+    return transactions, findings, account_risk
+
+
+def assess_accounts(records: Sequence[dict]) -> dict[str, AccountRisk]:
+    """Run the Stage 1 fan-out/convergence detector over the given records
+    and return only the account-level risk rollup (see `evaluate_transactions`
+    above for the full findings/account-risk pair)."""
+    _, _, account_risk = evaluate_transactions(records)
+    return account_risk

@@ -18,6 +18,7 @@ import {
   suggestNextDateTimeLocal,
   utcIsoToDateTimeLocal,
   validateTransactionForm,
+  withBrowserTimezone,
   type TransactionFormErrors,
   type TransactionFormValues,
 } from "@/lib/services/transactionValidation";
@@ -76,7 +77,7 @@ export function TransactionForm({
   const browserTimezone = useBrowserTimezoneOption();
 
   const timezoneOptions = useMemo(
-    () => (browserTimezone ? [...BASE_TIMEZONE_OPTIONS, browserTimezone] : BASE_TIMEZONE_OPTIONS),
+    () => withBrowserTimezone(BASE_TIMEZONE_OPTIONS, browserTimezone),
     [browserTimezone],
   );
 

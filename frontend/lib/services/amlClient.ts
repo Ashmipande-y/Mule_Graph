@@ -2,11 +2,13 @@ import type {
   AmlAssessResult,
   AmlDatasetSummary,
   AmlGraphSnapshot,
+  AmlLabeledNetworksResult,
   AmlTransaction,
   AmlTransactionPage,
   ApiAmlAssessResponse,
   ApiAmlDatasetSummaryResponse,
   ApiAmlGraphResponse,
+  ApiAmlLabeledNetworksResponse,
   ApiAmlSessionCommitResponse,
   ApiAmlTransaction,
   ApiAmlTransactionListResponse,
@@ -33,6 +35,7 @@ function mapTransaction(api: ApiAmlTransaction): AmlTransaction {
     currency: api.currency,
     timestamp: api.timestamp,
     paymentFormat: api.payment_format,
+    isLabeledLaundering: api.is_labeled_laundering ?? false,
   };
 }
 
@@ -189,6 +192,28 @@ export async function assessAmlTransactions(baseUrl: string, transactions: AmlTr
       threshold: r.threshold,
       modelVersion: r.model_version,
       features: r.features,
+    })),
+  };
+}
+
+/**
+ * Real neighborhoods discovered from the benchmark's own ground-truth
+ * is_laundering labels -- an independent, equally real notion of
+ * "suspicious" from ml/rules' own conclusion about the same neighborhood
+ * (see backend/app/api/aml.py::get_labeled_networks for why).
+ */
+export async function fetchAmlLabeledNetworks(baseUrl: string, maxResults = 8): Promise<AmlLabeledNetworksResult> {
+  const data = await request<ApiAmlLabeledNetworksResponse>(
+    `${base(baseUrl)}/api/aml/labeled-networks?max_results=${maxResults}`,
+  );
+  return {
+    sourceNote: data.source_note,
+    networks: data.networks.map((n) => ({
+      seedAccount: n.seed_account,
+      labeledLaunderingTransactionCount: n.labeled_laundering_transaction_count,
+      accountCount: n.account_count,
+      edgeCount: n.edge_count,
+      mlRulesRiskLevel: n.ml_rules_risk_level,
     })),
   };
 }

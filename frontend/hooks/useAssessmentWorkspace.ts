@@ -5,6 +5,7 @@ import { useConsoleData } from "./useConsoleData";
 import { useConsoleStore } from "@/lib/store/consoleStore";
 import { useAssessmentStore, useAssessmentActions } from "@/lib/store/assessmentStore";
 import { transactionSetsEqual } from "@/lib/services/transactionValidation";
+import { graphSnapshotToTransactions } from "@/lib/services/graphBuilder";
 import type { Transaction } from "@/types/transaction";
 
 function sortTransactions(transactions: readonly Transaction[]): Transaction[] {
@@ -32,18 +33,13 @@ export function useAssessmentWorkspace() {
   const result = useAssessmentStore((s) => s.result);
   const previousResult = useAssessmentStore((s) => s.previousResult);
   const error = useAssessmentStore((s) => s.error);
+  const errorKind = useAssessmentStore((s) => s.errorKind);
   const actions = useAssessmentActions();
 
-  const currentNetworkTransactions = useMemo<Transaction[]>(() => {
-    if (!graph) return [];
-    return graph.edges.map((edge) => ({
-      id: edge.id,
-      sender: edge.source,
-      receiver: edge.target,
-      amount: edge.amount,
-      timestamp: edge.timestamp,
-    }));
-  }, [graph]);
+  const currentNetworkTransactions = useMemo<Transaction[]>(
+    () => (graph ? graphSnapshotToTransactions(graph) : []),
+    [graph],
+  );
 
   const submissionSet = useMemo<Transaction[]>(() => {
     const base = networkMode === "include-current" ? currentNetworkTransactions : [];
@@ -99,6 +95,7 @@ export function useAssessmentWorkspace() {
     result,
     previousResult,
     error,
+    errorKind,
     isStale,
     liveBaseUrl,
     canRun: pendingTransactions.length > 0 && status !== "loading",

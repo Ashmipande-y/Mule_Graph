@@ -17,6 +17,22 @@ export const BASE_TIMEZONE_OPTIONS: TimezoneOption[] = [
   { label: "India Standard Time (+05:30)", offsetMinutes: 330 },
 ];
 
+/**
+ * Appends the browser-detected timezone unless an option with the same
+ * offset already exists (e.g. a machine set to IST duplicating the
+ * built-in "India Standard Time" entry) -- two options sharing one
+ * underlying `value` breaks Radix Select's internal by-value item
+ * tracking and produces a duplicate React key at runtime.
+ */
+export function withBrowserTimezone(
+  base: readonly TimezoneOption[],
+  browserOption: TimezoneOption | null,
+): TimezoneOption[] {
+  if (!browserOption) return [...base];
+  if (base.some((option) => option.offsetMinutes === browserOption.offsetMinutes)) return [...base];
+  return [...base, browserOption];
+}
+
 export interface TransactionFormValues {
   id: string;
   sender: string;

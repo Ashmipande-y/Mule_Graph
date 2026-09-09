@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from "@/components/shared/States";
 import { AssessmentResultPanel } from "@/components/investigation/AssessmentResultPanel";
 import { AssessmentServiceNotConnected } from "@/components/investigation/AssessmentServiceNotConnected";
+import { AssessmentRequestFailed } from "@/components/investigation/AssessmentRequestFailed";
 import { TransactionForm } from "./TransactionForm";
 import { SubmissionPreviewTable } from "./SubmissionPreviewTable";
 import { useAssessmentWorkspace } from "@/hooks/useAssessmentWorkspace";
@@ -36,6 +37,7 @@ export function AssessmentWorkspaceSheet() {
     result,
     previousResult,
     error,
+    errorKind,
     isStale,
     canRun,
     actions,
@@ -186,7 +188,12 @@ export function AssessmentWorkspaceSheet() {
 
                 {status === "loading" && <LoadingState label="Running risk assessment…" />}
 
-                {status === "error" && error && <AssessmentServiceNotConnected message={error} />}
+                {status === "error" && error && (errorKind === "not-connected" || errorKind === "network") && (
+                  <AssessmentServiceNotConnected message={error} />
+                )}
+                {status === "error" && error && errorKind !== "not-connected" && errorKind !== "network" && (
+                  <AssessmentRequestFailed message={error} kind={errorKind} />
+                )}
 
                 {(status === "loading" || status === "error") && previousResult && (
                   <AssessmentResultPanel result={previousResult} isPrevious />

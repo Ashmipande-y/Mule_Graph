@@ -21,9 +21,32 @@ export interface ApiEdge {
   timestamp: string;
 }
 
+/**
+ * Wire shape of one network-level finding on `GET /api/graph` (added
+ * 2026-09-09 -- see backend/docs/integration-contract.md). Mirrors
+ * `ml/rules/detector.py::Finding.to_dict()` in full, matching the internal
+ * `Finding` type in `lib/services/rules/detector.ts` field-for-field so live
+ * mode can reuse the same alert/case derivation as simulation instead of a
+ * separate live-only code path.
+ */
+export interface ApiFinding {
+  pattern: string;
+  source_account: string;
+  collector_account: string;
+  intermediary_accounts: string[];
+  fan_out_transaction_ids: string[];
+  convergence_transaction_ids: string[];
+  window_start: string;
+  window_end: string;
+  score: number;
+  score_method: string;
+  evidence: Record<string, unknown>;
+}
+
 export interface ApiGraphResponse {
   nodes: ApiNode[];
   edges: ApiEdge[];
+  findings?: ApiFinding[];
 }
 
 /**
@@ -46,11 +69,10 @@ export interface ApiXgbScoreResponse {
 
 /**
  * The assessment endpoint this frontend calls to score a batch of
- * transactions in network context. NOT YET IMPLEMENTED by the backend as of
- * this writing (see frontend/docs/assessment-endpoint-contract.md for the
- * full contract this shape is drawn from, and
- * lib/services/assessmentClient.ts for how a missing endpoint is reported
- * honestly rather than faked). Field names mirror
+ * transactions in network context (`backend/app/api/assess.py`; see
+ * frontend/docs/assessment-endpoint-contract.md for the full contract, and
+ * lib/services/assessmentClient.ts for how a genuinely unreachable backend
+ * is still reported honestly rather than faked). Field names mirror
  * ml/rules/account_risk.py::AccountRisk.to_dict() and
  * ml/rules/detector.py::Finding.to_dict() so a real implementation can
  * reuse those existing serializers directly instead of inventing a new
@@ -94,4 +116,5 @@ export interface ApiAssessmentResponse {
   accounts?: ApiAssessmentAccount[];
   accounts_requiring_review?: string[];
   patterns?: ApiAssessmentPattern[];
+  findings?: ApiFinding[];
 }

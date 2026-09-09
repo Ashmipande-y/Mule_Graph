@@ -16,6 +16,10 @@ export interface AmlTransaction {
   currency: "INR";
   timestamp: string; // minute-precision UTC ISO 8601, seconds fixed at "00"
   paymentFormat: AmlPaymentFormat;
+  /** The IBM AMLworld benchmark's own ground-truth is_laundering=1 label for
+   * this id -- NOT ml/rules or ml/aml_baseline output. Always false for a
+   * freshly session-committed transaction. */
+  isLabeledLaundering: boolean;
 }
 
 export interface AmlGraphNode {
@@ -82,6 +86,23 @@ export interface AmlAssessResult {
   results: AmlAssessResultItem[];
 }
 
+/** A real neighborhood discovered from the benchmark's own ground-truth
+ * labels -- an independent, equally real notion of "suspicious" from
+ * ml/rules' own (often UNASSESSED) heuristic conclusion about the same
+ * neighborhood, shown side by side rather than picking one. */
+export interface AmlLabeledNetwork {
+  seedAccount: string;
+  labeledLaunderingTransactionCount: number;
+  accountCount: number;
+  edgeCount: number;
+  mlRulesRiskLevel: RiskLevel;
+}
+
+export interface AmlLabeledNetworksResult {
+  sourceNote: string;
+  networks: AmlLabeledNetwork[];
+}
+
 // --- wire shapes (snake_case, exactly backend/app/schemas.py) --------------
 
 export interface ApiAmlTransaction {
@@ -92,6 +113,10 @@ export interface ApiAmlTransaction {
   currency: "INR";
   timestamp: string;
   payment_format: AmlPaymentFormat;
+  // Present (server-computed) on responses; never sent on a request body --
+  // the backend's AmlTransactionIn has no such field, this type just does
+  // double duty for both directions.
+  is_labeled_laundering?: boolean;
 }
 
 export interface ApiAmlGraphNode {
@@ -162,4 +187,17 @@ export interface ApiAmlAssessResponse {
 export interface ApiAmlSessionCommitResponse {
   committed: ApiAmlTransaction[];
   session_transaction_count: number;
+}
+
+export interface ApiAmlLabeledNetwork {
+  seed_account: string;
+  labeled_laundering_transaction_count: number;
+  account_count: number;
+  edge_count: number;
+  ml_rules_risk_level: RiskLevel;
+}
+
+export interface ApiAmlLabeledNetworksResponse {
+  source_note: string;
+  networks: ApiAmlLabeledNetwork[];
 }

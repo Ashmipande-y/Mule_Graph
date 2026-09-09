@@ -3,10 +3,14 @@ import { ASSESSMENT_ENDPOINT_PATH } from "@/lib/services/assessmentClient";
 import { cn } from "@/lib/utils";
 
 /**
- * The honest terminal state when the assessment backend doesn't exist yet
- * (currently always, since POST /api/assess isn't implemented) -- never a
- * silent fallback to a fabricated result. Documents the exact contract a
- * future backend would need so this is genuinely useful, not just an error.
+ * The honest terminal state when the assessment backend is genuinely
+ * unreachable or doesn't implement this contract (wrong `liveBaseUrl`, the
+ * backend isn't running, or an older backend without POST /api/assess) --
+ * never a silent fallback to a fabricated result. Distinct from
+ * AssessmentRequestFailed, which is for a *connected* backend that rejected
+ * or failed a specific request (see AssessmentWorkspaceSheet.tsx). Documents
+ * the exact contract the backend needs so this is genuinely useful, not
+ * just an error.
  */
 export function AssessmentServiceNotConnected({ message, className }: { message: string; className?: string }) {
   return (

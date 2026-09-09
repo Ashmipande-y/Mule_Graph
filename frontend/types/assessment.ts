@@ -47,5 +47,6 @@ export interface AssessmentResult {
   accounts: AssessmentAccountResult[];
   accountsRequiringReview: string[];
   patterns: AssessmentPatternResult[];
+  findings?: import("./finding").Finding[];
   transactions: Transaction[];
 }

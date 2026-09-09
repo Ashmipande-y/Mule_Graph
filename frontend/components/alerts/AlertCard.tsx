@@ -28,7 +28,9 @@ export function AlertCard({
     >
       <div className="mb-1 flex items-center justify-between gap-2">
         <RiskBadge level={alert.level} />
-        <span className="font-data text-[0.65rem] text-muted-foreground">revealed at step {alert.revealedAtStep}</span>
+        {alert.revealedAtStep !== null && (
+          <span className="font-data text-[0.65rem] text-muted-foreground">revealed at step {alert.revealedAtStep}</span>
+        )}
       </div>
       <p className="text-xs font-medium text-foreground">{alert.title}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{alert.summary}</p>

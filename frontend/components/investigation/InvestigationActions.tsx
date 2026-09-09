@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
+import { useCaseStore } from "@/lib/store/caseStore";
 import { toast } from "sonner";
-import { Flag, ShieldCheck, Snowflake, Undo2 } from "lucide-react";
+import { Flag, ShieldCheck, Snowflake } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -22,36 +24,17 @@ import { useConsoleStore, useConsoleActions } from "@/lib/store/consoleStore";
  * the "(simulated)" qualifier. Nothing here calls a real system.
  */
 export function InvestigationActions({ accountId }: { accountId: string }) {
-  const status = useConsoleStore((s) => s.investigationStatus[accountId] ?? "NEW");
   const actionState = useConsoleStore((s) => s.simulatedActions[accountId]);
   const actions = useConsoleActions();
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
-        <Button
-          size="sm"
-          variant={status === "INVESTIGATING" ? "secondary" : "outline"}
-          disabled={status === "INVESTIGATING"}
-          onClick={() => {
-            actions.investigate(accountId);
-            toast.success(`${accountId} marked as under investigation.`);
-          }}
-        >
-          <ShieldCheck /> Investigate
+        <Button size="sm" variant="outline" asChild>
+          <Link href="/investigator" onClick={() => { actions.selectAccount(accountId); useCaseStore.getState().select(null); }}>
+            <ShieldCheck /> Investigate evidence
+          </Link>
         </Button>
-        {status !== "NEW" && status !== "CLOSED" && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              actions.setInvestigationStatus(accountId, "CLOSED");
-              toast(`${accountId} investigation closed.`);
-            }}
-          >
-            <Undo2 /> Close
-          </Button>
-        )}
       </div>
 
       <div className="flex flex-wrap gap-1.5">

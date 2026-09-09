@@ -19,6 +19,9 @@ services:
       # on 127.0.0.1:3000.
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       LOG_LEVEL: INFO
+      CASE_DB_PATH: /app/backend/.runtime/cases.sqlite3
+    volumes:
+      - case-data:/app/backend/.runtime
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
       interval: 10s
@@ -26,3 +29,6 @@ services:
       retries: 3
       start_period: 5s
     restart: unless-stopped
+
+volumes:
+  case-data:

@@ -7,13 +7,25 @@ import pandas as pd
 from xgb_baseline.dataset import (
     DatasetIntegrityError,
     LABEL_COLUMN,
+    RAW_DATA_PATH,
     TIME_COLUMN,
     chronological_split,
     load_raw,
 )
 
+# The raw OpenML parquet is large, licensed, and gitignored (see
+# ml/data/raw/ in .gitignore) -- not present on a fresh checkout or a
+# stock CI runner. Tests that need it self-skip with a clear reason
+# instead of erroring, the same convention ml/aml_baseline/tests already
+# uses for its own gitignored data.
+DATA_PRESENT = RAW_DATA_PATH.exists()
+requires_data = unittest.skipUnless(
+    DATA_PRESENT, f"{RAW_DATA_PATH} not populated -- see ml/xgb_baseline/README.md or ml/requirements.txt setup"
+)
+
 
 class LoadRawTests(unittest.TestCase):
+    @requires_data
     def test_loads_and_matches_verified_provenance(self):
         df = load_raw()
         self.assertEqual(len(df), 284807)
@@ -27,6 +39,7 @@ class LoadRawTests(unittest.TestCase):
             with self.assertRaises(DatasetIntegrityError):
                 load_raw(bad_path)
 
+    @requires_data
     def test_rejects_wrong_row_count(self):
         real = load_raw()
         truncated = real.iloc[:100]
@@ -41,6 +54,7 @@ class LoadRawTests(unittest.TestCase):
             load_raw(Path("does_not_exist.parquet"))
 
 
+@unittest.skipUnless(DATA_PRESENT, f"{RAW_DATA_PATH} not populated -- see ml/xgb_baseline/README.md")
 class ChronologicalSplitTests(unittest.TestCase):
     def setUp(self):
         self.df = load_raw()

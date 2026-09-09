@@ -1,10 +1,24 @@
 import pytest
 
+from app import config
 from app.adapters import aml_baseline
 from app.services import aml_dataset, aml_session
 
-DATA_PRESENT = aml_dataset.get_settings().aml_transfers_path.exists()
-requires_data = pytest.mark.skipif(not DATA_PRESENT, reason="data/aml/transfers_inr.csv not populated")
+try:
+    import pandas  # noqa: F401
+
+    PANDAS_INSTALLED = True
+except ImportError:
+    PANDAS_INSTALLED = False
+
+# The dataset CSV can exist without the optional stack (backend/requirements-xgb.txt,
+# pandas in particular) being installed in the current environment (e.g. a
+# lightweight venv with only requirements.txt) -- check both, or these tests
+# fail with a real 500 instead of skipping cleanly.
+DATA_PRESENT = PANDAS_INSTALLED and aml_dataset.get_settings().aml_transfers_path.exists()
+requires_data = pytest.mark.skipif(
+    not DATA_PRESENT, reason="data/aml/transfers_inr.csv not populated and/or pandas (backend/requirements-xgb.txt) not installed"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -43,10 +57,14 @@ def test_canonical_graph_unaffected(client):
     assert len(body["edges"]) == 7
 
 
-@requires_data
 def test_xgb_score_unaffected_by_aml_router(client):
+    # Proves the route still exists and responds per its own contract once
+    # the AML router is also registered -- not a real-model-output check
+    # (that's backend/tests/test_xgb_score.py's job, self-skipped there when
+    # the model artifact isn't present). 503 (model genuinely unavailable on
+    # this machine) is as valid a "the route works" signal as 200 here.
     resp = client.post("/api/xgb-score", json={"time": 0, "amount": 1, "v": [0.0] * 28})
-    assert resp.status_code == 200
+    assert resp.status_code in (200, 503)
 
 
 # --- summary -----------------------------------------------------------------
@@ -154,6 +172,84 @@ def test_graph_findings_are_labeled_as_rules_output(client):
         assert "score_method" in finding  # rules Finding.score_method, never an XGBoost artifact
 
 
+# --- ground-truth labeled networks -------------------------------------------
+
+
+@requires_data
+def test_labeled_networks_returns_real_discovered_networks(client):
+    resp = client.get("/api/aml/labeled-networks")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "ground-truth" in body["source_note"] or "answer key" in body["source_note"]
+    assert len(body["networks"]) == 8  # default max_results, and the real dataset has enough distinct clusters
+
+    top = body["networks"][0]
+    assert top["seed_account"] == "IBM_HIS_V8:B0112931:A805D4C850"
+    assert top["labeled_laundering_transaction_count"] == 15
+    second = body["networks"][1]
+    assert second["seed_account"] == "IBM_HIS_V8:B0013078:A8053B01E0"
+    assert second["labeled_laundering_transaction_count"] == 13
+    # Descending order by real labeled-transaction count.
+    counts = [n["labeled_laundering_transaction_count"] for n in body["networks"]]
+    assert counts == sorted(counts, reverse=True)
+    for network in body["networks"]:
+        assert network["ml_rules_risk_level"] in ("HIGH", "MEDIUM", "LOW", "UNASSESSED")
+
+
+@requires_data
+def test_labeled_networks_respects_max_results(client):
+    resp = client.get("/api/aml/labeled-networks", params={"max_results": 2})
+    assert resp.status_code == 200
+    assert len(resp.json()["networks"]) == 2
+
+
+@requires_data
+def test_labeled_networks_consistent_with_graph_endpoint(client):
+    top = client.get("/api/aml/labeled-networks", params={"max_results": 1}).json()["networks"][0]
+    graph = client.get("/api/aml/graph", params={"account": top["seed_account"]}).json()
+    assert len(graph["nodes"]) == top["account_count"]
+    assert len(graph["edges"]) == top["edge_count"]
+
+
+@requires_data
+def test_is_labeled_laundering_flag_is_accurate(client):
+    # A known ground-truth-labeled transaction id (touches the top labeled
+    # network's seed account) must read true; an arbitrary early transaction
+    # from the dataset (not in the 145-row labels file) must read false.
+    graph = client.get(
+        "/api/aml/graph", params={"account": "IBM_HIS_V8:B0112931:A805D4C850"}
+    ).json()
+    flagged = [e for e in graph["edges"] if e["is_labeled_laundering"]]
+    assert len(flagged) > 0
+
+    ordinary = client.get("/api/aml/transactions", params={"limit": 1}).json()["items"][0]
+    assert ordinary["is_labeled_laundering"] is False
+
+
+@requires_data
+def test_freshly_committed_transaction_is_never_labeled_laundering(client):
+    resp = client.post("/api/aml/session/transactions", json={"transactions": [valid_transaction()]})
+    assert resp.status_code == 200
+    assert resp.json()["committed"][0]["is_labeled_laundering"] is False
+
+
+def test_labeled_networks_empty_when_labels_file_missing(client, monkeypatch, tmp_path):
+    # Missing labels file is optional/non-fatal (mirrors AML_MODE=optional
+    # for the base dataset), not an AmlDatasetError -- must return 200 with
+    # an empty list, never 500 or a silently-fabricated network. Doesn't
+    # need @requires_data: the route returns before ever touching the
+    # (possibly pandas-gated) base dataset once labels are empty.
+    missing = tmp_path / "does-not-exist.csv"
+    monkeypatch.setattr(
+        "app.services.aml_dataset.get_settings",
+        lambda: config.Settings(aml_labels_path=missing),
+    )
+
+    resp = client.get("/api/aml/labeled-networks")
+    assert resp.status_code == 200
+    assert resp.json()["networks"] == []
+
+
 # --- assess: validation errors -----------------------------------------------
 
 
@@ -184,6 +280,87 @@ def test_assess_rejects_unsupported_payment_format(client):
 @requires_data
 def test_assess_rejects_malformed_timestamp_with_seconds(client):
     resp = client.post("/api/aml/assess", json={"transactions": [valid_transaction(timestamp="2022-09-01T00:00:05Z")]})
+    assert resp.status_code == 422
+
+
+@requires_data
+@pytest.mark.parametrize(
+    "bad_timestamp",
+    [
+        "2022-13-01T00:00:00Z",  # month 13
+        "2022-02-30T00:00:00Z",  # Feb 30 never exists
+        "2023-02-29T00:00:00Z",  # Feb 29 in a non-leap year
+        "2022-01-32T00:00:00Z",  # day 32
+        "2022-01-01T24:00:00Z",  # hour 24
+        "2022-01-01T00:60:00Z",  # minute 60
+        "2022-00-01T00:00:00Z",  # month 0
+        "2022-01-00T00:00:00Z",  # day 0
+    ],
+)
+def test_assess_rejects_invalid_calendar_timestamp(client, bad_timestamp):
+    # Every one of these has the right digit *shape* for the old
+    # regex-only check (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z) but is not a real
+    # calendar date/time -- must be rejected with a field-specific 422, not
+    # silently accepted into scoring or (worse) stored history.
+    resp = client.post("/api/aml/assess", json={"transactions": [valid_transaction(timestamp=bad_timestamp)]})
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert any("timestamp" in str(err.get("loc", err)) for err in (detail if isinstance(detail, list) else [detail]))
+
+
+@requires_data
+def test_assess_accepts_a_valid_leap_day_timestamp(client):
+    # 2024 is a leap year -- Feb 29 is a real date and must not be rejected
+    # by the stricter calendar check that now also rejects Feb 30/29-in-a-
+    # non-leap-year above.
+    resp = client.post("/api/aml/assess", json={"transactions": [valid_transaction(timestamp="2024-02-29T12:00:00Z")]})
+    assert resp.status_code == 200
+
+
+@requires_data
+def test_session_commit_rejects_invalid_calendar_timestamp_and_does_not_store_it(client):
+    bad = valid_transaction(timestamp="2022-02-30T00:00:00Z")
+    resp = client.post("/api/aml/session/transactions", json={"transactions": [bad]})
+    assert resp.status_code == 422
+
+    # The invalid record must never reach session history: the summary count
+    # stays at zero, it never appears in the transaction list, and a later
+    # graph request (which parses every stored timestamp with
+    # datetime.strptime -- see app/adapters/aml_rules.py) does not crash.
+    summary = client.get("/api/aml/summary").json()
+    assert summary["session_transaction_count"] == 0
+
+    listing = client.get("/api/aml/transactions", params={"account": "TEST_SENDER"}).json()
+    assert bad["id"] not in [item["id"] for item in listing["items"]]
+
+    graph_resp = client.get("/api/aml/graph")
+    assert graph_resp.status_code == 200
+
+
+@requires_data
+def test_assess_rejects_boolean_amount(client):
+    resp = client.post("/api/aml/assess", json={"transactions": [valid_transaction(amount_paise=True)]})
+    assert resp.status_code == 422
+
+
+@requires_data
+def test_assess_rejects_fractional_amount(client):
+    resp = client.post("/api/aml/assess", json={"transactions": [valid_transaction(amount_paise=100000.5)]})
+    assert resp.status_code == 422
+
+
+@requires_data
+def test_assess_rejects_whole_number_float_amount(client):
+    # 100000.0 has no fractional part, but silently truncating a float into
+    # the integer minor-units field is exactly the "unintended coercion"
+    # this endpoint must not perform -- only a genuine JSON integer is valid.
+    resp = client.post("/api/aml/assess", json={"transactions": [valid_transaction(amount_paise=100000.0)]})
+    assert resp.status_code == 422
+
+
+@requires_data
+def test_assess_rejects_amount_as_numeric_string(client):
+    resp = client.post("/api/aml/assess", json={"transactions": [valid_transaction(amount_paise="100000")]})
     assert resp.status_code == 422
 
 
@@ -301,6 +478,13 @@ def test_committed_transaction_appears_in_transaction_list(client):
 
 
 def test_assess_returns_503_when_model_unavailable(client, monkeypatch):
+    # Deliberately artifact-independent (no @requires_data): mocks the
+    # dataset-history lookup too, so this exercises only the
+    # model-unavailable path -- not the real dataset/pandas stack, which
+    # would otherwise make this test's outcome depend on backend/requirements-xgb.txt
+    # being installed for a scenario that isn't actually about the dataset.
+    monkeypatch.setattr("app.api.aml.aml_dataset.all_records_sorted", lambda: [])
+
     def _raise_unavailable(*args, **kwargs):
         raise aml_baseline.AmlModelUnavailableError("model file not found")
 

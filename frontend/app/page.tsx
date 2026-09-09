@@ -1,5 +1,5 @@
-import { CommandCenterView } from "@/components/layouts/command/CommandCenterView";
+import { OverviewView } from "@/components/overview/OverviewView";
 
 export default function Home() {
-  return <CommandCenterView />;
+  return <OverviewView />;
 }

@@ -20,7 +20,7 @@ export function AlertList({
     return (
       <EmptyState
         title="No alerts yet"
-        description="An alert appears once a detected pattern's evidence is fully revealed by replay."
+        description="An alert appears once a detected pattern's evidence is complete in the currently active dataset."
         className={className}
       />
     );

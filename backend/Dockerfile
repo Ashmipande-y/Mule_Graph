@@ -48,6 +48,7 @@ ENV CORS_ORIGINS=http://localhost:3000 \
 
 RUN groupadd --gid 10001 appuser \
     && useradd --uid 10001 --gid appuser --no-create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/backend/.runtime \
     && chown -R appuser:appuser /app
 USER appuser
 

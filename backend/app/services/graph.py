@@ -15,8 +15,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.adapters.ml_rules import MlRulesError, assess_accounts
-from app.schemas import Edge, GraphResponse, Node
+from app.adapters.ml_rules import MlRulesError, evaluate_transactions
+from app.schemas import Edge, GraphFinding, GraphResponse, Node
 
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -81,7 +81,14 @@ def _load_json(path: Path) -> Any:
         ) from exc
 
 
-def _validate_transactions(data: Any) -> list[dict]:
+def validate_transactions(data: Any) -> list[dict]:
+    """Validates a raw list of transaction records against the canonical
+    demo's schema (id/sender/receiver non-empty strings, positive-integer
+    `amount` with no boolean coercion, full UTC ISO 8601 second-precision
+    `timestamp`, no duplicate ids). Public: also used by
+    `app.api.assess` for `POST /api/assess`, which evaluates a
+    caller-supplied transaction set the same way this validates the
+    canonical fixture for `GET /api/graph`."""
     if not isinstance(data, list):
         raise GraphSourceError(f"transaction source: top-level value must be a JSON array, got {type(data).__name__}")
 
@@ -138,7 +145,7 @@ def _build_graph(transactions: list[dict]) -> GraphResponse:
         account_ids.add(tx["receiver"])
 
     try:
-        account_risk = assess_accounts(transactions)
+        _, findings, account_risk = evaluate_transactions(transactions)
     except MlRulesError as exc:
         raise GraphSourceError(f"rules adapter rejected an already-validated record: {exc}") from exc
 
@@ -172,7 +179,24 @@ def _build_graph(transactions: list[dict]) -> GraphResponse:
     ]
     edges.sort(key=lambda edge: (edge.timestamp, edge.id))
 
-    return GraphResponse(nodes=nodes, edges=edges)
+    finding_models = [
+        GraphFinding(
+            pattern=f.pattern,
+            source_account=f.source_account,
+            collector_account=f.collector_account,
+            intermediary_accounts=list(f.intermediary_accounts),
+            fan_out_transaction_ids=list(f.fan_out_transaction_ids),
+            convergence_transaction_ids=list(f.convergence_transaction_ids),
+            window_start=f.window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            window_end=f.window_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            score=f.score,
+            score_method=f.score_method,
+            evidence=f.evidence,
+        )
+        for f in findings
+    ]
+
+    return GraphResponse(nodes=nodes, edges=edges, findings=finding_models)
 
 
 def load_graph(path: Path) -> GraphResponse:
@@ -181,5 +205,5 @@ def load_graph(path: Path) -> GraphResponse:
     Raises GraphSourceError on any missing/malformed source data.
     """
     data = _load_json(path)
-    transactions = _validate_transactions(data)
+    transactions = validate_transactions(data)
     return _build_graph(transactions)

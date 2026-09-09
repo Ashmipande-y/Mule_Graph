@@ -49,13 +49,32 @@ integration is discoverable even when the data isn't present locally.
 
 ## Regenerating this data
 
-This project does not redistribute IBM's raw source file. To regenerate:
+This project does not redistribute IBM's raw source file and never fetches
+it automatically (Kaggle requires your own account/credentials, which this
+project never asks for, stores, or invents). To regenerate:
 
-1. Obtain `HI-Small_Trans.csv` (version 8) via KaggleHub, matching the SHA-256
-   above.
-2. Run the preparation script (adapted from the originally-supplied
-   `prepare_mulegraph.py`; see `ml/aml_baseline/` for this project's copy of
-   the feature/label logic) to produce the files listed above.
+1. Obtain `HI-Small_Trans.csv` (version 8) from
+   [Kaggle](https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml)
+   yourself, matching the SHA-256 above.
+2. Run the tracked preparation script (from the repo root, with
+   `ml/requirements.txt` installed — see `ml/aml_baseline/README.md` for the
+   venv setup):
+   ```powershell
+   ml/.venv/Scripts/python.exe scripts/prepare_aml_dataset.py --source /path/to/HI-Small_Trans.csv
+   ```
+   This verifies the source file's hash and schema, converts amounts to
+   exact integer paise, normalizes timestamps (UTC assumed, minute
+   precision — see "Time" above), computes the causal feature set, and
+   writes every file in the table above plus `ml/data/aml/splits/`,
+   directly in place. See the script's own module docstring for the full
+   list of validations it performs, and
+   `scripts/test_prepare_aml_dataset.py` for a data-driven proof that its
+   feature computation reproduces the already-committed
+   `ml/data/aml/splits/*_features.csv` values exactly.
+3. Save the CDLA-Sharing-1.0 license text (e.g. from
+   [cdla.dev/sharing-1-0](https://cdla.dev/sharing-1-0/)) as
+   `data/aml/LICENSE-DATA.txt` yourself — the script does not generate or
+   fetch license text.
 
 See `ml/aml_baseline/README.md` for the model training command once this
 data is in place.

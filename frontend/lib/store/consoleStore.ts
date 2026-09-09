@@ -7,6 +7,7 @@ import { createSimulatedActionState } from "@/types/investigation";
 import { CANONICAL_TRANSACTIONS, DEFAULT_LIVE_BASE_URL, type DataMode } from "@/lib/services/dataSource";
 import { fetchLiveGraph, LiveApiError } from "@/lib/services/apiClient";
 import type { GraphSnapshot } from "@/types/graph";
+import type { Finding } from "@/lib/services/rules/detector";
 
 export const SPEED_OPTIONS = [0.5, 1, 2, 4] as const;
 export type SpeedMultiplier = (typeof SPEED_OPTIONS)[number];
@@ -35,7 +36,19 @@ interface ConsoleState {
   liveBaseUrl: string;
   liveStatus: "idle" | "loading" | "ready" | "error";
   liveGraph: GraphSnapshot | null;
+  liveFindings: Finding[];
   liveError: string | null;
+  /**
+   * Bumped every time a live fetch's result is actually applied. Part of
+   * the active-data context's identity (see hooks/useConsoleData.ts) so
+   * consumers can tell "a fresh snapshot just landed" apart from "the same
+   * liveGraph reference/mode as before" -- and so a late-resolving fetch
+   * from a previous request never overwrites a newer one (see
+   * actions.fetchLive below).
+   */
+  liveRevision: number;
+  /** ISO timestamp of the last successfully applied live fetch, or null before the first one. */
+  liveEvaluatedAt: string | null;
 
   selectedAccountId: string | null;
   selectedTransactionId: string | null;
@@ -90,6 +103,16 @@ function clearTick() {
   }
 }
 
+/**
+ * Identifies the in-flight live fetch, if any. A new `fetchLive()` call
+ * aborts whatever this points to before starting, and after resolving,
+ * checks that it is still the current controller before applying its
+ * result -- together these prevent a late response from an earlier
+ * request (e.g. the analyst changed the backend URL and re-fetched before
+ * the first request finished) from ever overwriting a newer one.
+ */
+let currentLiveFetchController: AbortController | null = null;
+
 export const useConsoleStore = create<ConsoleStore>()((set, get) => ({
   transactions: CANONICAL_TRANSACTIONS,
   revealedCount: CANONICAL_TRANSACTIONS.length,
@@ -100,7 +123,10 @@ export const useConsoleStore = create<ConsoleStore>()((set, get) => ({
   liveBaseUrl: DEFAULT_LIVE_BASE_URL,
   liveStatus: "idle",
   liveGraph: null,
+  liveFindings: [],
   liveError: null,
+  liveRevision: 0,
+  liveEvaluatedAt: null,
 
   selectedAccountId: null,
   selectedTransactionId: null,
@@ -157,13 +183,32 @@ export const useConsoleStore = create<ConsoleStore>()((set, get) => ({
     },
     setLiveBaseUrl: (url) => set({ liveBaseUrl: url }),
     fetchLive: async () => {
+      const myController = new AbortController();
+      currentLiveFetchController?.abort();
+      currentLiveFetchController = myController;
+
       set({ liveStatus: "loading", liveError: null });
       try {
-        const graph = await fetchLiveGraph(get().liveBaseUrl);
-        set({ liveStatus: "ready", liveGraph: graph, liveError: null });
+        const result = await fetchLiveGraph(get().liveBaseUrl, myController.signal);
+        // A newer fetchLive() call may have started (and become "current")
+        // while this one was in flight -- discard this result rather than
+        // clobber whatever that newer call already applied or is about to.
+        if (currentLiveFetchController !== myController) return;
+        set((s) => ({
+          liveStatus: "ready",
+          liveGraph: result.graph,
+          liveFindings: result.findings,
+          liveError: null,
+          liveRevision: s.liveRevision + 1,
+          liveEvaluatedAt: new Date().toISOString(),
+        }));
       } catch (error) {
+        // Aborted because a newer fetchLive() superseded this one -- not a
+        // real failure, and that newer call owns the error/loading state now.
+        if (myController.signal.aborted) return;
+        if (currentLiveFetchController !== myController) return;
         const message = error instanceof LiveApiError ? error.message : "Unexpected error contacting the backend.";
-        set({ liveStatus: "error", liveGraph: null, liveError: message });
+        set({ liveStatus: "error", liveGraph: null, liveFindings: [], liveError: message });
       }
     },
 

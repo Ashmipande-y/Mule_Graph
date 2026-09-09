@@ -14,6 +14,7 @@ import datetime
 from typing import Sequence
 
 from .detector import DetectorConfig, Finding, detect_fan_out_convergence
+from .engine import RulesEngineConfig, detect_all_patterns
 from .transactions import Transaction
 
 
@@ -41,3 +42,18 @@ def evaluate_at(
     """
     snapshot = observable_transactions(transactions, as_of)
     return detect_fan_out_convergence(snapshot, config=config)
+
+
+def evaluate_all_at(
+    transactions: Sequence[Transaction],
+    as_of: datetime.datetime,
+    config: RulesEngineConfig | None = None,
+) -> list[Finding]:
+    """Run all enabled detection patterns against a replay snapshot.
+
+    Guarantees zero future leakage: only transactions timestamped <= as_of
+    are provided to the pattern detectors.
+    """
+    snapshot = observable_transactions(transactions, as_of)
+    return detect_all_patterns(snapshot, config=config)
+

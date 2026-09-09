@@ -66,3 +66,22 @@ export function buildGraphSnapshot(transactions: readonly Transaction[]): GraphB
 
   return { graph: { nodes, edges }, findings, accountRisk };
 }
+
+/**
+ * Inverse-ish of the edge-building step above: recovers the Transaction
+ * list a GraphSnapshot's edges represent. Used wherever a consumer has a
+ * graph from a source that isn't itself a Transaction list (the live
+ * backend fetch) but needs one anyway (transaction tables, account detail,
+ * the assessment workspace's "current network" preview) -- one shared
+ * implementation instead of several ad hoc copies of the same four-field
+ * rename.
+ */
+export function graphSnapshotToTransactions(graph: GraphSnapshot): Transaction[] {
+  return graph.edges.map((edge) => ({
+    id: edge.id,
+    sender: edge.source,
+    receiver: edge.target,
+    amount: edge.amount,
+    timestamp: edge.timestamp,
+  }));
+}

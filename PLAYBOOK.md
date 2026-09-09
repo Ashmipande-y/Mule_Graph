@@ -17,6 +17,7 @@
    - [Deterministic Rules & Replay Engine (`ml/rules`)](#deterministic-rules--replay-engine)
    - [Standalone XGBoost Risk Model (`ml/xgb_baseline`)](#standalone-xgboost-risk-model)
    - [AML Baseline Model (`ml/aml_baseline`)](#aml-baseline-model)
+   - [GraphSAGE Feasibility Assessment & Benchmark (`ml/experiments/graphsage`)](#graphsage-feasibility-assessment--benchmark-mlexperimentsgraphsage)
 5. [Backend Architecture & API Service (`backend/`)](#5-backend-architecture--api-service)
    - [Design Principles & The Adapter Pattern](#design-principles--the-adapter-pattern)
    - [Complete API Endpoint Catalog](#complete-api-endpoint-catalog)
@@ -140,23 +141,52 @@ Located at `data/aml/transfers_inr.csv`, this dataset represents real-world ente
 
 A pure-Python (zero third-party dependencies) deterministic pattern recognition engine.
 
-#### 1. Fan-Out & Convergence Detection (`ml/rules/detector.py`)
-- **Fan-Out Rule:** Identifies when an account sends money to $\ge 3$ distinct intermediaries within a configured time window (`fan_out_window_seconds = 60s`).
-- **Convergence Rule:** Identifies when $\ge 3$ intermediaries forward received funds to one collector account within `convergence_window_seconds = 60s`.
-- **Heuristic Scoring:** Findings are scored from `0.0` to `1.0` based on:
-  1. Volume dispersion ratio (how much of the incoming money was rapidly sent out).
-  2. Intermediary count ratio (number of active hops).
-  3. Time compactness (how few seconds elapsed between the first fan-out and final convergence).
+#### 1. Explainable Detection Patterns (`ml/rules`)
 
-#### 2. Account Risk Aggregation (`ml/rules/account_risk.py`)
-Maps graph patterns into structured account risk tiers:
-- **`CRITICAL` (Score $\ge 0.8$):** High-velocity fan-out source (`ACC_A`) and primary collector (`ACC_X`).
-- **`HIGH` (Score $\ge 0.6$):** Active intermediary mule hops (`ACC_B`, `ACC_C`, `ACC_D`).
-- **`MEDIUM` / `LOW`:** Peripheral or slow-moving accounts.
-- **`UNASSESSED`:** Accounts with zero detection evidence.
+All pattern detectors output a unified `Finding` schema with quantitative `measured_signals`, concrete `evidence_transaction_ids`, `rule_version`, and a human-readable `explanation`. See [`docs/detection-patterns.md`](file:///d:/Mule_Graph/docs/detection-patterns.md) for full formal specifications and false-positive counterexamples.
 
-#### 3. Temporal Point-in-Time Replay (`ml/rules/replay.py`)
-Allows an analyst to step through transactions second-by-second (`evaluate_at(t)`). It eliminates lookahead bias by ensuring only transactions timestamped $\le t$ are evaluated for that frame.
+1. **Fan-Out & Convergence (`ml/rules/detector.py`):**
+   - **Pattern:** $S \rightarrow \ge 3$ intermediaries $\rightarrow$ common collector $C$.
+   - **Time Window:** 60s (Demo) / 6 hours (AML).
+   - **Signals:** `intermediary_ratio`, `amount_conservation`, `time_compactness`.
+
+2. **Circular Transfer Loops (`ml/rules/circular.py`):**
+   - **Pattern:** Directed cycle $A \rightarrow B \rightarrow \dots \rightarrow A$ returning funds to the originator.
+   - **Typology:** Wash trading, artificial volume creation, round-tripping to obscure provenance.
+   - **Criteria:** 2 to 5 hops, $\le 60$s hop delay, $\ge 70\%$ amount retention.
+   - **Signals:** `cycle_length`, `cycle_path`, `retention_ratio`, `duration_seconds`, `hop_delays_seconds`.
+
+3. **Rapid Forwarding Chains (`ml/rules/forwarding.py`):**
+   - **Pattern:** Linear relay chain $A \rightarrow B \rightarrow C \rightarrow D$ without cycles.
+   - **Typology:** Layering / peeling chains across institutions to evade detection before freezes.
+   - **Criteria:** $\ge 3$ hops (4 accounts), $\le 60$s hop delay, $\ge 75\%$ pass-through at each hop.
+   - **Signals:** `hops`, `chain_path`, `pass_through_ratio`, `duration_seconds`, `hop_delays_seconds`.
+
+4. **Fan-In Collector Activity (`ml/rules/fan_in.py`):**
+   - **Pattern:** Multiple distinct senders transferring into one collector within a tight window.
+   - **Typology:** Micro-mule smurfing consolidation, phishing proceeds gathering.
+   - **Criteria:** $\ge 3$ distinct senders, $\le 60$s window.
+   - **Signals:** `sender_count`, `senders`, `total_amount`, `window_span_seconds`.
+   - **Deduplication:** Redundant alerts are suppressed when already captured by a broader fan-out/convergence finding.
+
+5. **Unusual Reactivation After Dormancy (`ml/rules/dormancy.py`):**
+   - **Pattern:** Account idle for extended period experiencing an abrupt transaction burst.
+   - **Typology:** Pre-aged "sleeper" mule accounts awakened for illicit operations.
+   - **Criteria:** $\ge 3,600$s dormancy (Demo/test) / $\ge 30$ days (AML), burst window $\le 60$s, surge amount $\ge ₹10,000$ and $\ge 2\times$ historical average.
+   - **Signals:** `inactivity_seconds`, `inactivity_days`, `burst_transaction_count`, `burst_total_amount`, `surge_ratio`.
+
+#### 2. Multi-Pattern Orchestrator (`ml/rules/engine.py`)
+- `RulesEngineConfig`: Timescale presets for second-resolution demo fixtures (`demo_preset()`) and hour/day-resolution enterprise AML datasets (`aml_preset()`).
+- `detect_all_patterns(transactions, config)`: Runs enabled detectors with cross-rule alert deduplication.
+
+#### 3. Account Risk Aggregation (`ml/rules/account_risk.py`)
+Maps graph patterns into structured account risk tiers across all pattern types:
+- Roles assigned: `"source"`, `"collector"`, `"intermediary"`, `"cycle_originator"`, `"cycle_intermediary"`, `"chain_originator"`, `"chain_recipient"`, `"chain_intermediary"`, `"fan_in_sender"`, `"dormant_account"`.
+- Risk levels: `HIGH` (score ≥ 0.75), `MEDIUM` (0.4 ≤ score < 0.75), `LOW` (0 < score < 0.4), and `UNASSESSED` (no findings).
+
+#### 4. Temporal Point-in-Time Replay (`ml/rules/replay.py`)
+Allows an analyst to step through transactions second-by-second (`evaluate_at(t)` and `evaluate_all_at(t)`). It eliminates lookahead bias by ensuring only transactions timestamped $\le t$ are evaluated.
+
 
 ---
 
@@ -176,9 +206,33 @@ A supervised machine learning model for assessing transaction-level fraud probab
 
 ### AML Baseline Model (`ml/aml_baseline`)
 
-An XGBoost classifier tuned for heterogeneous enterprise banking payment streams, identifying layering and smurfing across diverse payment methods.
+An XGBoost classifier tuned for heterogeneous enterprise banking payment streams, identifying layering and smurfing across diverse payment methods. Operates on 35 causal rolling velocity and counterparty features, achieving 0.2438 PR-AUC and 0.8446 ROC-AUC on the chronological test split.
 
 ---
+
+### GraphSAGE Feasibility Assessment & Benchmark (`ml/experiments/graphsage`)
+
+An empirical evaluation was conducted to assess whether deep Graph Neural Networks (GraphSAGE) are justified for MuleGraph's AML transfer classification. Full technical documentation is recorded in [`docs/ml/graphsage-evaluation.md`](file:///d:/Mule_Graph/docs/ml/graphsage-evaluation.md) and empirical results in [`ml/reports/graphsage_benchmark.json`](file:///d:/Mule_Graph/ml/reports/graphsage_benchmark.json).
+
+#### Key Assessment Findings:
+1. **Severe Label Scarcity:** The chronological test split contains only **18 positive laundering cases** across 5,479 transactions (0.33% base rate). A single transaction swings recall by 5.56%, making statistically significant proof of superiority impossible ($\text{SE} \approx \pm 10.2\%$).
+2. **Causal Neighborhood Collapse:** Under strict temporal causality ($\mathcal{G}_{< t}$), **72.2% of test positives involve senders with zero prior transactions**, and **27.8% have zero prior transactions on both sides**. GraphSAGE's multi-hop aggregation collapses to isolated dummy node representations.
+3. **Absence of Node Attributes:** The dataset provides zero account metadata (no KYC, age, balance). GNNs must rely entirely on structural statistics already captured more efficiently by XGBoost.
+4. **Target Mismatch & Architectural Boundaries:** GraphSAGE natively learns node embeddings, whereas the dataset labels transactions and MuleGraph detects account rings. Core MuleGraph preserves its zero-graph-learning runtime invariant, and **no automatic fallback** is permitted between incompatible models.
+
+#### Head-to-Head Empirical Benchmark Results:
+| Metric / Budget | XGBoost Baseline | GraphSAGE GNN (Isolated) | Finding |
+|---|---|---|---|
+| **Test PR-AUC** | **0.2438** | **0.0568** | XGBoost achieves >4x higher PR-AUC |
+| **Precision @ Validation Thresh** | **66.67%** (4 / 6) | **6.06%** (2 / 33) | GraphSAGE produces 15x more false alarms |
+| **Recall @ Validation Thresh** | **22.22%** (4 / 18) | **11.11%** (2 / 18) | XGBoost catches twice as many positives |
+| **Top-10 Review Budget Recall** | **27.78%** (TP=5) | **0.00%** (TP=0) | GNN catches zero alerts in Top-10 |
+| **Top-20 Review Budget Recall** | **33.33%** (TP=6) | **5.56%** (TP=1) | XGBoost is 6x more effective |
+| **Top-50 Review Budget Recall** | **44.44%** (TP=8) | **16.67%** (TP=3) | XGBoost catches nearly half of all laundering |
+| **Batch Scoring Throughput** | **610,957 tx/s** | **7,250 tx/s** | XGBoost is 84x faster on batches |
+
+**Conclusion:** Deploying GraphSAGE is **not operationally justified**. The existing XGBoost baseline remains the production standard. Prerequisites for future GNN consideration include: $\ge 1,000$ positive cases across distinct graph patterns, dense historical transaction histories (median degree $\ge 10$), static account KYC attributes, and audited account-level ground truth.
+
 
 ## 5. Backend Architecture & API Service (`backend/`)
 
@@ -209,13 +263,29 @@ To adhere to clean architectural boundaries, `ml/` is **never** copied into `bac
 
 | Method | Endpoint | Description | Request Body / Parameters | Response Model |
 |---|---|---|---|---|
-| `GET` | `/health` | System health & status check | None | `{"status": "ok"}` |
-| `GET` | `/api/graph` | Canonical 6-node / 7-edge interactive graph with embedded rule scores | None | `GraphResponse` (nodes, edges, risk scores) |
-| `POST` | `/api/xgb-score` | On-demand ML scoring for a raw transaction | JSON payload (sender, receiver, amount, timestamp) | `XgbScoreResponse` (score, risk_level, features) |
-| `GET` | `/api/aml/summary` | Metadata, counts, and model status for AML dataset | None | `AmlDatasetSummaryResponse` |
-| `GET` | `/api/aml/transactions` | Paginated listing of AML transactions | `limit`, `offset`, `account_id` | `AmlTransactionListResponse` |
-| `POST` | `/api/aml/assess` | Run model + rule detection against AML records | List of AML transactions | `AmlAssessResponse` |
-| `GET` | `/api/aml/graph` | Graph projection of the AML transfer network | Filter criteria | `AmlGraphResponse` |
+| `GET` | `/health` | Liveness health check | None | `{"status": "ok"}` |
+| `GET` | `/health/ready` | Dependency readiness probe (demo data, AML data, ML rules, models, event bus) | None | `ReadinessResponse` (200 ready / 503 degraded) |
+| `GET` | `/api/events` | Server-Sent Events (SSE) live updates stream with `Last-Event-ID` resume | `workspace_id`, `since_id`, `Last-Event-ID` | `text/event-stream` (`transaction_committed`, `assessment_completed`, `case_updated`, `resync`) |
+| `GET` | `/api/events/poll` | HTTP polling fallback for event streams | `since_id`, `workspace_id` | `{"events": [...], "resync_required": bool, "latest_event_id": int}` |
+| `GET` | `/api/cases` | List investigation cases | None | List of `CaseResponse` |
+| `POST` | `/api/cases/{case_id}/status` | Transition case status and append notes (emits live `case_updated` event) | `{"status": "...", "author": "...", "note": "..."}` | `CaseResponse` |
+| `GET` | `/api/operations/metrics` | Structured operational measurements (request latency p50/p95/p99, analysis duration, ingestion failures, event lag) | None | Operational metrics JSON |
+| `GET` | `/api/graph` | Canonical 6-node / 7-edge interactive graph with embedded rule scores and real findings | None | `GraphResponse` (nodes, edges, findings) |
+| `POST` | `/api/assess` | **Stateless** re-evaluation of a caller-supplied canonical-demo transaction set against `ml/rules` (whole-rupee `amount`) | `{"transactions": [{id, sender, receiver, amount, timestamp}]}` | Account risk + real network findings |
+| `POST` | `/api/xgb-score` | On-demand card-fraud scoring in the model's own native schema (unrelated to mule-network risk) — `503` if the optional model/deps aren't installed | `{time, amount, v[28]}` | `XgbScoreResponse` (score, is_fraud, threshold) |
+| `GET` | `/api/aml/summary` | Metadata, counts, and model availability for the IBM AML dataset — `500` with a clear message if the dataset file isn't present | None | `AmlDatasetSummaryResponse` |
+| `GET` | `/api/aml/transactions` | Paginated listing of AML transactions | `cursor`, `limit`, `account`, `after`, `before` | `AmlTransactionListResponse` |
+| `GET` | `/api/aml/graph` | Bounded BFS graph projection of the AML transfer network, with `ml/rules` findings at a dataset-appropriate (hours) timescale | `account`, `max_nodes`, `max_edges` | `AmlGraphResponse` |
+| `POST` | `/api/aml/assess` | **Stateless** transaction-level scoring via `ml/aml_baseline` (integer `amount_paise`, never merged with `/api/graph`'s account/network risk) — `503` if the trained model isn't present | `{"transactions": [...]}` (AML schema) | `AmlAssessResponse` |
+| `POST` | `/api/aml/session/transactions` | Commits transactions to this process's in-memory session (emits live `transaction_committed` event) | `{"transactions": [...]}` (AML schema) | `AmlSessionCommitResponse` |
+
+Optional-artifact endpoints (`/api/xgb-score`, `/api/aml/*`) never train or
+download anything at request time or at startup — a missing model/dataset
+file is always reported as a specific, actionable error, never a silent
+fallback or a crash. See `backend/docs/integration-contract.md` and
+`backend/docs/aml-integration-contract.md` for full contracts, and
+`ml/models/README.md` / `data/aml/README.md` for how to supply the
+artifacts each optional endpoint needs.
 
 ---
 
@@ -291,6 +361,27 @@ The root [`Dockerfile`](file:///d:/Mule_Graph/Dockerfile) executes a two-stage b
 2. **Stage 2 (`runtime`):** Uses `python:3.14-slim`, installs pinned Node.js binaries, installs Python ML/FastAPI dependencies, and copies the standalone frontend server.
 3. **Supervisor (`docker-entrypoint.sh`):** Launches both `uvicorn` and `node /app/frontend/server.js`, continuously checks their process PIDs, and handles graceful shutdown (`SIGTERM`/`SIGINT`). If either process fails, the container restarts.
 
+**Builds from a fresh checkout with zero optional artifacts present.** The
+two large, gitignored, optional inputs (`data/aml/transfers_inr.csv`,
+`ml/models/{xgb_baseline,aml_baseline}.joblib`) are copied
+**directory-level**, not as specific-file `COPY`s — `COPY data/aml/ ./data/aml/`
+and `COPY ml/models/ ./ml/models/` both succeed whether or not the optional
+file inside is actually present (a specific-file `COPY` would hard-fail the
+whole build the instant the file is missing). `ml/models/README.md` is
+tracked specifically so the `ml/models/` directory exists at all on a fresh
+`git clone` (git doesn't track empty directories). Verified 2026-09-09 by
+building with both artifacts moved aside, then confirming `/api/graph` and
+`POST /api/assess` work fully while `/api/xgb-score` and `/api/aml/*` return
+a clear, specific error — see root `README.md`.
+
+Before the two supervised processes start, `docker-entrypoint.sh` checks for
+the two AML artifacts and logs their status either way. `AML_MODE`
+(env var, default `optional`) controls what happens if they're missing:
+`optional` logs and continues (the lightweight demo config); `required`
+refuses to start the container at all, printing exactly what's missing (the
+explicit AML config) — see root `README.md` and `compose.yaml`. Neither mode
+ever downloads or trains anything itself.
+
 ---
 
 ### Execution Cheat Sheet
@@ -333,25 +424,48 @@ npm run dev
 
 ## 8. Testing & Quality Assurance
 
-MuleGraph includes test suites at every tier:
+MuleGraph includes test suites at every tier. Counts below are as verified
+2026-09-09; artifact-dependent suites (marked) self-skip with a clear reason
+when their optional dataset/model isn't present, rather than failing or
+silently passing nothing.
 
 ```powershell
 # 1. Validate canonical demo data consistency
 python scripts/validate_demo.py
 
-# 2. Run backend API test suite (21+ tests)
+# 2. Run backend API test suite (114 tests)
 backend/.venv/Scripts/python.exe -m pytest backend/tests -q
 
-# 3. Run ML rules engine test suite
+# 3. Run ML rules engine test suite (29 tests, stdlib only)
 python -m unittest discover -s ml/tests -t ml
 
-# 4. Run ML XGBoost baseline test suite
+# 4. Run ML XGBoost baseline test suite (20 tests; artifact-dependent)
 ml/.venv/Scripts/python.exe -m unittest discover -s ml/xgb_baseline/tests -t ml
 
-# 5. Run Frontend test suite
+# 5. Run ML AML baseline test suite (29 tests; artifact-dependent)
+ml/.venv/Scripts/python.exe -m unittest discover -s ml/aml_baseline/tests -t ml
+
+# 6. Run the AML dataset-prep script's own tests (19 tests; parity-checks
+#    against the real committed ml/data/aml/splits/*.csv, artifact-dependent)
+ml/.venv/Scripts/python.exe -m unittest scripts.test_prepare_aml_dataset -v
+
+# 7. Frontend: unit tests, type-check, lint, production build
 cd frontend
-npm run test
+npm test
+npx tsc --noEmit
+npm run lint
+npm run build
+
+# 8. Browser integration tests (Playwright) -- spins up its own isolated
+#    backend + frontend on dedicated ports, never a shared personal server
+cd frontend
+npx playwright test
 ```
+
+`.github/workflows/ci.yml` runs all of the above on every push/PR, split
+into lightweight jobs (always run, must pass) and artifact-dependent ML
+jobs (install the full dependency stack, but self-report skips via each
+suite's own guards when the actual data/model files aren't present).
 
 ---
 
@@ -367,22 +481,25 @@ npm run test
 
 ```text
 d:\Mule_Graph
+├── .github/workflows/ci.yml    # CI: fixture validation, all test suites, lint/build, e2e
 ├── compose.yaml                # Primary Docker Compose configuration
-├── Dockerfile                  # Unified multi-stage container build
-├── docker-entrypoint.sh        # Dual-process supervisor script
-├── README.md                   # Repository introduction
+├── Dockerfile                  # Unified multi-stage container build (artifact-optional)
+├── docker-entrypoint.sh        # Dual-process supervisor + AML_MODE prerequisite check
+├── README.md                   # Repository introduction & quickstart
 ├── PLAYBOOK.md                 # This definitive A-to-Z playbook
 ├── scripts/
-│   └── validate_demo.py        # Validates demo data against contract
+│   ├── validate_demo.py        # Validates demo data against contract
+│   ├── prepare_aml_dataset.py  # Tracked IBM AML source -> data/aml/ + ml/data/aml/splits/ converter
+│   └── test_prepare_aml_dataset.py  # Its tests, incl. parity vs. real committed features
 ├── data/
 │   ├── demo_transactions.json  # Ground-truth 6-account, 7-transfer demo data
 │   ├── graph.example.json      # Reference precomputed graph payload
-│   └── aml/transfers_inr.csv   # Large-scale AML transaction dataset
+│   └── aml/                    # IBM AML dataset (gitignored bulk files; README.md tracked)
 ├── ml/
 │   ├── rules/                  # Fan-out & convergence pattern detector
 │   ├── xgb_baseline/           # XGBoost anomaly classifier & trainer
-│   ├── aml_baseline/           # Scaled AML classification model
-│   └── models/                 # Serialized model bundles (.joblib)
+│   ├── aml_baseline/           # AML transaction classifier
+│   └── models/                 # Serialized model bundles (.joblib, gitignored) + README.md (versions/checksums)
 ├── backend/
 │   ├── app/                    # FastAPI application, routers, services
 │   ├── tests/                  # Pytest unit & integration test suite
@@ -392,6 +509,8 @@ d:\Mule_Graph
 │   ├── app/                    # Next.js App Router pages & layouts
 │   ├── components/             # Reusable UI components & force-graph
 │   ├── types/                  # TypeScript interfaces & API models
+│   ├── e2e/                    # Playwright browser integration tests
+│   ├── playwright.config.ts    # Isolated-server e2e config
 │   └── package.json            # Node.js dependencies (React 19, Next 16)
 └── docs/
     ├── api-contract.md         # Official REST API specification

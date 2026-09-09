@@ -18,16 +18,15 @@ response this module's callers build must say so explicitly.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from app.config import get_settings
+from app.schemas import is_valid_aml_timestamp
 from app.services import aml_session
 from app.services.aml_types import AmlRecord
 
-TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z$")
 SUPPORTED_CURRENCIES = ("INR",)
 SUPPORTED_PAYMENT_FORMATS = ("ACH", "Wire")
 
@@ -72,9 +71,10 @@ def validate_record(
         raise AmlValidationError(
             f"unsupported currency {currency!r}; supported: {SUPPORTED_CURRENCIES}", field="currency"
         )
-    if not isinstance(timestamp, str) or not TIMESTAMP_PATTERN.match(timestamp):
+    if not isinstance(timestamp, str) or not is_valid_aml_timestamp(timestamp):
         raise AmlValidationError(
-            "timestamp must be minute-precision UTC ISO 8601, e.g. 2022-09-01T00:00:00Z (seconds must be '00')",
+            "timestamp must be a real minute-precision UTC calendar date/time, "
+            "e.g. 2022-09-01T00:00:00Z (seconds must be '00'; month/day/hour/minute must be valid)",
             field="timestamp",
         )
     if payment_format not in SUPPORTED_PAYMENT_FORMATS:
@@ -130,8 +130,30 @@ def _base_dataset() -> tuple[AmlRecord, ...]:
     return _load_base_dataset(get_settings().aml_transfers_path)
 
 
+@lru_cache(maxsize=1)
+def _load_labeled_laundering_ids(path: Path) -> frozenset[str]:
+    """The IBM AMLworld benchmark's own ground-truth `is_laundering` labels --
+    the published answer key, NOT this app's `ml/rules` detector output (see
+    `backend/app/api/aml.py::get_labeled_networks`). A strictly-additive,
+    optional layer on top of the already-optional AML dataset: a missing
+    file means "no ground-truth examples available", not a broken service,
+    so this returns an empty set rather than raising AmlDatasetError."""
+    if not path.exists():
+        return frozenset()
+    import csv
+
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        return frozenset(row["id"] for row in reader if row.get("is_laundering") == "1")
+
+
+def labeled_laundering_ids() -> frozenset[str]:
+    return _load_labeled_laundering_ids(get_settings().aml_labels_path)
+
+
 def reset_cache_for_tests() -> None:
     _load_base_dataset.cache_clear()
+    _load_labeled_laundering_ids.cache_clear()
 
 
 def all_known_ids() -> set[str]:

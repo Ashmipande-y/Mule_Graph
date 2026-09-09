@@ -41,8 +41,69 @@ describe("fetchLiveGraph", () => {
       status: 200,
       json: async () => ({ nodes: [], edges: [] }) satisfies ApiGraphResponse,
     });
-    const graph = await fetchLiveGraph("http://127.0.0.1:8000");
-    expect(graph).toEqual({ nodes: [], edges: [] });
+    const result = await fetchLiveGraph("http://127.0.0.1:8000");
+    expect(result.graph).toEqual({ nodes: [], edges: [] });
+    expect(result.findings).toEqual([]);
+  });
+
+  it("maps real findings alongside the graph, field-for-field, from the same response", async () => {
+    mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () =>
+        ({
+          nodes: [],
+          edges: [],
+          findings: [
+            {
+              pattern: "fan_out_convergence",
+              source_account: "ACC_A",
+              collector_account: "ACC_X",
+              intermediary_accounts: ["ACC_B", "ACC_C", "ACC_D"],
+              fan_out_transaction_ids: ["TX_002", "TX_003", "TX_004"],
+              convergence_transaction_ids: ["TX_005", "TX_006", "TX_007"],
+              window_start: "2026-01-01T10:00:04Z",
+              window_end: "2026-01-01T10:00:21Z",
+              score: 0.9317,
+              score_method: "heuristic_v1",
+              evidence: {
+                intermediary_ratio: 1.0,
+                amount_conservation: 0.8667,
+                time_compactness: 0.8583,
+                total_fan_out_amount: 45000,
+                total_convergence_amount: 39000,
+                window_span_seconds: 17,
+                fan_out_window_seconds: 60,
+                convergence_window_seconds: 60,
+              },
+            },
+          ],
+        }) satisfies ApiGraphResponse,
+    });
+    const result = await fetchLiveGraph("http://127.0.0.1:8000");
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toEqual({
+      pattern: "fan_out_convergence",
+      sourceAccount: "ACC_A",
+      collectorAccount: "ACC_X",
+      intermediaryAccounts: ["ACC_B", "ACC_C", "ACC_D"],
+      fanOutTransactionIds: ["TX_002", "TX_003", "TX_004"],
+      convergenceTransactionIds: ["TX_005", "TX_006", "TX_007"],
+      windowStart: "2026-01-01T10:00:04Z",
+      windowEnd: "2026-01-01T10:00:21Z",
+      score: 0.9317,
+      scoreMethod: "heuristic_v1",
+      evidence: {
+        intermediaryRatio: 1.0,
+        amountConservation: 0.8667,
+        timeCompactness: 0.8583,
+        totalFanOutAmount: 45000,
+        totalConvergenceAmount: 39000,
+        windowSpanSeconds: 17,
+        fanOutWindowSeconds: 60,
+        convergenceWindowSeconds: 60,
+      },
+    });
   });
 
   it("throws LiveApiError with the server's detail on a non-2xx response", async () => {

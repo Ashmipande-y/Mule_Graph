@@ -11,7 +11,29 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SAMPLES_PATH = REPO_ROOT / "backend" / "examples" / "xgb_score_samples.json"
 SAMPLES = json.loads(SAMPLES_PATH.read_text(encoding="utf-8"))
 
+# The trained model file is gitignored (ml/models/*.joblib) -- not present on
+# a fresh checkout or a stock CI runner -- and the optional xgboost/pandas/
+# joblib stack (backend/requirements-xgb.txt) may not be installed even when
+# the file is (e.g. a lightweight venv with only requirements.txt). Only the
+# two tests that need a real model load are skipped when either is missing;
+# validation/CORS/unavailable-path tests don't touch the model and always
+# run. Same convention as backend/tests/test_aml.py's `requires_data`.
+MODEL_PATH = REPO_ROOT / "ml" / "models" / "xgb_baseline.joblib"
+try:
+    import joblib  # noqa: F401
+    import xgboost  # noqa: F401
 
+    XGB_STACK_INSTALLED = True
+except ImportError:
+    XGB_STACK_INSTALLED = False
+MODEL_PRESENT = MODEL_PATH.exists() and XGB_STACK_INSTALLED
+requires_model = pytest.mark.skipif(
+    not MODEL_PRESENT,
+    reason=f"{MODEL_PATH} not populated and/or backend/requirements-xgb.txt not installed; run ml/scripts/run_xgb_baseline.py first",
+)
+
+
+@requires_model
 def test_xgb_score_returns_model_output(client):
     resp = client.post("/api/xgb-score", json={"time": 5000, "amount": 149.62, "v": VALID_V})
     assert resp.status_code == 200
@@ -71,6 +93,7 @@ def test_graph_and_health_unaffected_by_xgb_route(client):
     assert client.get("/api/graph").status_code == 200
 
 
+@requires_model
 @pytest.mark.parametrize("sample", SAMPLES, ids=[s["description"] for s in SAMPLES])
 def test_xgb_score_matches_recorded_fixture_output(client, sample):
     # Real held-out-test-split rows (backend/examples/README.md) -- the live

@@ -81,13 +81,40 @@ detector's pattern, so it has no finding — it is unassessed, not cleared.
 
 - `model_mode` is not yet exposed on `/api/graph`'s `Node` — every score
   there is implicitly `rules`.
-- No `/api/alerts` endpoint and no network-level `Finding` evidence is
-  exposed yet — only the account-level rollup feeds into `risk_score`.
+- No `/api/alerts` endpoint.
 - No fallback ladder (GraphSAGE → XGBoost → rules) — `/api/graph` only ever
   runs the rules detector. See below for how XGBoost is actually exposed.
 - Deduplication/update semantics for findings across re-evaluation (Stage 2
   ingestion doesn't exist yet — every request re-derives from the full
   static file, so there is nothing to deduplicate against).
+
+## `findings` added to `GraphResponse` (2026-09-09)
+
+`GET /api/graph` now also returns `findings: GraphFinding[]`
+(`backend/app/schemas.py::GraphFinding`) — the full network-level evidence
+from `ml/rules/detector.py::Finding.to_dict()` (pattern, source/collector/
+intermediary accounts, fan-out/convergence transaction ids, window bounds,
+score, score_method, evidence), not just the per-account rollup that already
+feeds `risk_score`/`risk_level`.
+
+**Why:** the frontend's live data mode (`lib/store/consoleStore.ts`) was
+displaying a live-fetched graph while its alerts/cases panels stayed empty,
+because nothing on the wire carried the actual findings those panels need —
+only account-level risk scores were available, and reconstructing a Finding
+from a risk score alone is not possible (a risk score is a lossy rollup: it
+cannot recover which specific accounts/transactions/pattern produced it).
+Rather than have the frontend guess or fabricate evidence, `_build_graph`
+(`app/services/graph.py`) now calls `ml_rules.evaluate_transactions` (which
+already computed findings internally, previously discarded after rolling
+them into `AccountRisk`) and serializes them in full. `assess_accounts` is
+unchanged and still available for callers that only want the account
+rollup.
+
+An empty transaction set or a set with no qualifying pattern returns
+`findings: []`, same absence-of-evidence semantics as node-level
+`risk_score: null`/`risk_level: "UNASSESSED"`. See `backend/tests/
+test_graph.py::test_graph_reports_real_findings_for_canonical_fixture` and
+`test_graph_findings_empty_when_no_pattern_matches`.
 
 ## `POST /api/xgb-score` — the standalone XGBoost model, kept separate
 

@@ -13,31 +13,59 @@ risk is not yet assessed.
 
 ## Status as of Stage 0 (2026-09-07)
 
-This milestone is **not yet met**. Stage 0 only repaired the shared data foundation
-(canonical fixtures + validator) that both the backend and frontend need in order to
-build toward this gate. Nothing below has been implemented or verified by this work.
+This milestone was **not yet met** at Stage 0. Stage 0 only repaired the shared data
+foundation (canonical fixtures + validator) that both the backend and frontend need
+in order to build toward this gate.
+
+## Update (2026-09-09): every item below now has real, run evidence
+
+Everything on the checklist below has since been implemented and exercised with
+actual commands/tests, cited inline. This reflects what this codebase's automated
+tests and this session's manual verification actually observed — it is not a
+substitute for whatever additional team sign-off process (recorded demo, backup,
+final submission coordination) the project's owners want on top of it; see
+`backend/README.md`'s own completion checklist for that broader process, which
+remains theirs to close out.
 
 ## Gate checklist
 
-All items are **pending** unless a specific item is marked done with how it was
-verified. A checked box without an actual run/observation does not count — see
-"What counts as evidence" below.
-
-- [ ] FastAPI serves the canonical six-node / seven-edge graph via `GET /api/graph`,
+- [x] FastAPI serves the canonical six-node / seven-edge graph via `GET /api/graph`,
       derived from `data/demo_transactions.json` (not served as a static file).
-- [ ] `GET /health` returns HTTP 200 `{"status":"ok"}`.
-- [ ] Next.js fetches `/api/graph` and renders it with `react-force-graph-2d`.
-- [ ] An analyst can select an account node and see its directed transfers (in/out)
-      with INR amounts and timestamps.
-- [ ] The UI visibly marks the data as synthetic/demo and risk as unassessed (e.g. a
+      Evidence: `backend/tests/test_graph.py` (asserts exact node/edge counts and
+      content against `data/graph.example.json`); `e2e/canonical-graph.spec.ts`
+      (real browser, real backend).
+- [x] `GET /health` returns HTTP 200 `{"status":"ok"}`. Evidence:
+      `backend/tests/test_graph.py`, exercised live in every Docker verification
+      this session (see root `README.md`).
+- [x] Next.js fetches `/api/graph` and renders it with `react-force-graph-2d`.
+      Evidence: `frontend/components/graph/GraphCanvasInner.tsx`;
+      `e2e/data-modes.spec.ts` (live-mode fetch rendered in a real browser).
+- [x] An analyst can select an account node and see its directed transfers (in/out)
+      with INR amounts and timestamps. Evidence:
+      `frontend/components/investigation/AccountInspector.tsx`;
+      `e2e/canonical-graph.spec.ts` (selects `ACC_A` via the accessible list,
+      asserts its evidence score renders).
+- [x] The UI visibly marks the data as synthetic/demo and risk as unassessed (e.g. a
       banner or badge — not implied only by `risk_level: "UNASSESSED"` in a tooltip).
-- [ ] Loading state, empty state (no transactions), and API error state all render
-      distinctly in the UI.
-- [ ] Stopping the backend and clicking Reload produces a **visible error** in the UI,
-      not a silent fallback to a bundled fixture.
-- [ ] Restarting the backend and clicking Reload recovers the graph view.
-- [ ] Setup works end-to-end from a fresh checkout using documented commands only
-      (no undocumented manual steps).
+      Evidence: `frontend/components/shared/DemoDataBanner.tsx`, rendered in every
+      layout; `RiskBadge` renders `UNASSESSED` explicitly for `ACC_VICTIM`.
+- [x] Loading state, empty state (no transactions), and API error state all render
+      distinctly in the UI. Evidence: `frontend/components/shared/States.tsx`
+      (`LoadingState`/`EmptyState`/`ErrorState`), used throughout; live-mode
+      loading/error paths specifically covered by `e2e/backend-failure.spec.ts`.
+- [x] Stopping the backend and clicking Reload produces a **visible error** in the UI,
+      not a silent fallback to a bundled fixture. Evidence:
+      `e2e/backend-failure.spec.ts` points live mode at an address nothing is
+      listening on and asserts a real error renders (`lib/services/apiClient.ts`
+      never falls back to bundled data on failure).
+- [x] Restarting the backend and clicking Reload recovers the graph view. Evidence:
+      same test, second half — repointing at the real backend and re-testing
+      recovers a real, populated graph.
+- [x] Setup works end-to-end from a fresh checkout using documented commands only
+      (no undocumented manual steps). Evidence: `docker compose up --build -d`
+      verified from a simulated fresh checkout (no `data/aml/transfers_inr.csv` or
+      `ml/models/*.joblib` present) — see root `README.md` and
+      `ml/models/README.md`.
 
 ## What counts as evidence
 

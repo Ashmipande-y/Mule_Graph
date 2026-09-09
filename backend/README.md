@@ -204,7 +204,25 @@ Start this stage after the static vertical slice is verified. Keep the shared fi
 
 ### Proposed additional endpoints
 
-These routes follow the master project direction but their detailed payloads must be agreed with Ashmi, Jatin, and Adnan before integration:
+**Update (2026-09-09):** what actually shipped took a different, simpler
+shape than this original plan: `POST /api/assess` (`backend/app/api/assess.py`)
+— a **stateless** batch re-evaluation of a caller-supplied transaction set
+against `ml/rules`, not the persistent ingestion endpoint (`POST
+/api/transactions`) this section originally proposed. No `GET
+/api/accounts/{id}`, `GET /api/risk/{id}`, `GET /api/alerts`, or `WS
+/ws/transactions` exist — the frontend derives that presentation entirely
+from `/api/graph` and `/api/assess`'s responses client-side. See
+`frontend/docs/assessment-endpoint-contract.md` for the actual contract and
+`backend/tests/test_assess.py` for its verified behavior (including an
+exact-parity check against `/api/graph` for the canonical fixture). The IBM
+AML dataset also went live with its own separate, non-persistent endpoint
+set (`GET /api/aml/summary`, `GET /api/aml/transactions`, `GET
+/api/aml/graph`, `POST /api/aml/assess`, `POST /api/aml/session/transactions`
+— the last being the only endpoint in the whole backend that persists
+anything, and only in-memory for the process's lifetime) — see
+`backend/docs/aml-integration-contract.md`. The rest of this section's
+proposed endpoints remain unimplemented; this note only documents what's
+real today, not a decision to abandon the original plan. These routes follow the master project direction but their detailed payloads must be agreed with Ashmi, Jatin, and Adnan before integration:
 
 | Endpoint | Purpose | Stage |
 | --- | --- | --- |
@@ -319,12 +337,13 @@ Freeze features after the complete demo survives three clean rehearsals. Record 
 
 ## Configuration target
 
-Implement and document a single explicit configuration loader. Do not assume a `.env` file loads merely because it exists. The following names are proposed conventions; coordinate any change before consumers rely on them.
+Implement and document a single explicit configuration loader. Do not assume a `.env` file loads merely because it exists. **Precedence (highest wins): process environment > `backend/.env` > built-in default** (`app/config.py::_load_env_values`, verified in `backend/tests/test_config.py`). The following names are proposed conventions; coordinate any change before consumers rely on them.
 
 | Variable | Initial target | Purpose |
 | --- | --- | --- |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed frontend origins, comma-separated; both loopback forms allowed by default since a browser treats them as different origins (see `backend/docs/integration-contract.md`, updated 2026-09-09) |
 | `DEMO_TRANSACTIONS_PATH` | repo-relative `data/demo_transactions.json` | Static source; allow an absolute override |
+| `AML_TRANSFERS_PATH` | repo-relative `data/aml/transfers_inr.csv` | IBM AML dataset source; allow an absolute override |
 | `LOG_LEVEL` | `INFO` | Backend logging |
 | `STORAGE_MODE` | later: `memory` | Explicit runtime store selection |
 | `DATABASE_URL` | unset until PostgreSQL stage | Local secret configuration |
@@ -374,6 +393,28 @@ backend/.venv/Scripts/python.exe -m pytest backend/tests -q
 Configure test imports explicitly. Tests should use temporary fixtures/stores and must not rewrite shared demo data or a developer's database. Backend integration tests must call the existing rules adapter, not a reimplemented test double for the entire detection path.
 
 ## Docker (Stage 1 image)
+
+**Update (2026-09-09, second entry):** the primary, documented Docker path
+for this project is now the **root-level combined container**
+(`D:\Mule_Graph\Dockerfile` + `D:\Mule_Graph\compose.yaml`, run as
+`docker compose up --build -d` from the repo root) — it packages this same
+backend alongside the built frontend in one image/container. See the root
+`README.md` and `PLAYBOOK.md` for that path, including:
+- The build now succeeds from a **fresh checkout with none of the optional
+  artifacts present** (`data/aml/transfers_inr.csv`,
+  `ml/models/{xgb_baseline,aml_baseline}.joblib`) — `/api/graph` and
+  `POST /api/assess` work fully regardless; `/api/xgb-score` and
+  `/api/aml/*` return a clear error identifying exactly what's missing
+  until those artifacts are supplied (see `ml/models/README.md`,
+  `data/aml/README.md`).
+- An `AML_MODE=required` override (`docker-entrypoint.sh`) makes the
+  container refuse to start at all — printing exactly what's missing —
+  unless both AML artifacts are present, for a deployment that specifically
+  wants AML support and would rather fail loudly than degrade silently.
+
+The `backend/compose.yaml` image described below (backend-only, no
+frontend) still works independently and is unaffected by any of this — use
+it if you specifically want the backend in its own container.
 
 **Update (2026-09-09):** this image now packages the FastAPI app, `data/demo_transactions.json`, `ml/rules` (wired into `/api/graph`'s risk fields), and `ml/xgb_baseline` + its trained `ml/models/xgb_baseline.joblib` (wired into the separate `POST /api/xgb-score` endpoint only — see `backend/docs/integration-contract.md`). It still does **not** include `requirements-dev.txt`, torch, PyTorch Geometric, CUDA drivers, or the credit-card training Parquet file (`ml/data/raw/creditcard_openml_1597.parquet` — the training set stays out of the image on purpose; only the already-trained model bundle ships). This roughly triples the image size (~1.6 GB vs ~260 MB) because of `xgboost`/`pandas`/`numpy`/`scipy`/`pyarrow`/`scikit-learn`. Build context is the **repository root**, not `backend/`, because the image needs files from `data/` and `ml/` alongside `backend/`; see `backend/Dockerfile.dockerignore` for exactly what crosses into the build. Run every command below from `D:\MuleGraph`.
 

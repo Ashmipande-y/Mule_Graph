@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { Transaction } from "@/types/transaction";
 import type { AssessmentNetworkMode, AssessmentResult, AssessmentRunStatus } from "@/types/assessment";
-import { AssessmentApiError, submitAssessment } from "@/lib/services/assessmentClient";
+import { AssessmentApiError, submitAssessment, type AssessmentErrorKind } from "@/lib/services/assessmentClient";
 import { CANONICAL_TRANSACTIONS } from "@/lib/services/dataSource";
 import { useConsoleStore } from "./consoleStore";
 
@@ -21,6 +21,12 @@ interface AssessmentState {
   result: AssessmentResult | null;
   previousResult: AssessmentResult | null;
   error: string | null;
+  // Distinguishes "the backend is genuinely unreachable/not implemented"
+  // (not-connected, network) from "the backend is connected but rejected or
+  // failed this specific request" (validation, server) -- now that
+  // POST /api/assess exists, the two must not be shown with the same
+  // "service not connected" messaging (see AssessmentWorkspaceSheet.tsx).
+  errorKind: AssessmentErrorKind | null;
 }
 
 interface AssessmentActions {
@@ -60,6 +66,7 @@ export const useAssessmentStore = create<AssessmentStore>()((set, get) => ({
   result: null,
   previousResult: null,
   error: null,
+  errorKind: null,
 
   actions: {
     openWorkspace: (options) => {
@@ -108,7 +115,7 @@ export const useAssessmentStore = create<AssessmentStore>()((set, get) => ({
     runAssessment: async (baseUrl, transactionsToSubmit) => {
       pauseReplay();
       const priorResult = get().result;
-      set({ status: "loading", error: null, previousResult: priorResult });
+      set({ status: "loading", error: null, errorKind: null, previousResult: priorResult });
       try {
         const result = await submitAssessment(baseUrl, transactionsToSubmit);
         // Once assessed, these transactions become part of the displayed
@@ -116,11 +123,12 @@ export const useAssessmentStore = create<AssessmentStore>()((set, get) => ({
         // clearing them here is what keeps a later "current network" read
         // from double-counting them as both "network" and "pending" in the
         // next submission preview.
-        set({ status: "success", result, error: null, pendingTransactions: [] });
+        set({ status: "success", result, error: null, errorKind: null, pendingTransactions: [] });
       } catch (error) {
         const message =
           error instanceof AssessmentApiError ? error.message : "Unexpected error contacting the backend.";
-        set({ status: "error", error: message });
+        const kind = error instanceof AssessmentApiError ? error.kind : "server";
+        set({ status: "error", error: message, errorKind: kind });
       }
     },
 
@@ -131,6 +139,7 @@ export const useAssessmentStore = create<AssessmentStore>()((set, get) => ({
         previousResult: null,
         status: "idle",
         error: null,
+        errorKind: null,
         formMode: "hidden",
         editingTransactionId: null,
       }),

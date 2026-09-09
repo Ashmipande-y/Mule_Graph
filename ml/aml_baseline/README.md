@@ -8,6 +8,13 @@ and real evaluation results.
 Structurally independent of `ml/xgb_baseline` (unrelated card-fraud model)
 and `ml/rules` (heuristic detector) — no shared imports.
 
+## Getting the data (upstream of this package)
+
+`ml/data/aml/splits/` doesn't exist on a fresh checkout. Populate it first
+with `scripts/prepare_aml_dataset.py` against your own downloaded IBM AML
+source file — see `data/aml/README.md`'s "Regenerating this data" section
+for the exact command, source, and every validation it performs.
+
 ## Setup and training (from the repo root)
 
 ```powershell

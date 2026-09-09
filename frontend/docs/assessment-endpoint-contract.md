@@ -1,11 +1,12 @@
-# Assessment endpoint contract (proposed, not implemented)
+# Assessment endpoint contract
 
-Status: **frontend-proposed, not implemented by the backend.** This is a
-frontend-owned design document, not a change to the shared
-`docs/api-contract.md` or `backend/docs/integration-contract.md` — those
-stay backend/ML-owned per `CLAUDE.md`'s ownership boundaries. If this
-contract is adopted, the backend owner should review and, if needed,
-correct it before implementing.
+Status: **implemented** — `POST /api/assess` (`backend/app/api/assess.py`)
+matches this contract as written; see `backend/tests/test_assess.py` for
+regression coverage, including exact-parity checks against `GET /api/graph`
+for the canonical fixture. This remains a frontend-owned design document,
+not a change to the shared `docs/api-contract.md` or
+`backend/docs/integration-contract.md` — those stay backend/ML-owned per
+`CLAUDE.md`'s ownership boundaries.
 
 ## Why this exists
 
@@ -24,13 +25,14 @@ endpoint that doesn't exist yet:
   transactions there would be nonsensical and is explicitly disallowed by
   `backend/README.md`'s "Model compatibility and failure behavior" section.
 
-So `lib/services/assessmentClient.ts` calls the endpoint below. Since it
-does not exist on the backend today, every call currently resolves the
-"not connected" branch — that is the correct, honest behavior, not a bug.
-See `components/investigation/AssessmentServiceNotConnected.tsx` for how
-that's surfaced to the analyst, and `hooks/useConsoleData.ts`/
-`lib/services/assessmentGraph.ts` for how a real response would flow into
-the graph/table/inspector once implemented.
+So `lib/services/assessmentClient.ts` calls the endpoint below, which is now
+implemented (`backend/app/api/assess.py`). The "not connected" branch (see
+`components/investigation/AssessmentServiceNotConnected.tsx`) still exists
+and still fires honestly for a genuinely unreachable/misconfigured backend
+(wrong `liveBaseUrl`, backend not running) — it is no longer the expected
+outcome against a running backend. See `hooks/useConsoleData.ts`/
+`lib/services/assessmentGraph.ts` for how a real response flows into the
+graph/table/inspector.
 
 ## Endpoint
 
@@ -126,7 +128,8 @@ to the existing rules pipeline, not a new detection system.
 
 | Status | Meaning | Frontend behavior |
 | --- | --- | --- |
-| `404` / `405` | Endpoint not implemented (current reality) | "Assessment service not connected," with this contract shown |
+| `404` / `405` | Endpoint not reachable (e.g. wrong `liveBaseUrl`, pointed at an older backend) | "Assessment service not connected," with this contract shown |
+| `409` | Duplicate transaction id within the request | Shown as a validation error |
 | `422` | Invalid transaction data | Shown as a validation error, backend `detail` surfaced verbatim |
 | `5xx` | Server error | Shown as a service error, retryable |
 | network failure | Backend unreachable | "Could not reach the backend," retryable |

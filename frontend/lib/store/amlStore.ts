@@ -1,12 +1,20 @@
 "use client";
 
 import { create } from "zustand";
-import type { AmlAssessResult, AmlDatasetSummary, AmlGraphSnapshot, AmlTransaction, AmlTransactionPage } from "@/types/aml";
+import type {
+  AmlAssessResult,
+  AmlDatasetSummary,
+  AmlGraphSnapshot,
+  AmlLabeledNetwork,
+  AmlTransaction,
+  AmlTransactionPage,
+} from "@/types/aml";
 import {
   AmlApiError,
   assessAmlTransactions,
   commitAmlTransactions,
   fetchAmlGraph,
+  fetchAmlLabeledNetworks,
   fetchAmlSummary,
   fetchAmlTransactions,
 } from "@/lib/services/amlClient";
@@ -35,6 +43,11 @@ interface AmlState {
   limit: number;
   filterAccount: string | null;
 
+  labeledNetworksStatus: FetchStatus;
+  labeledNetworks: AmlLabeledNetwork[];
+  labeledNetworksSourceNote: string | null;
+  labeledNetworksError: string | null;
+
   selectedAccountId: string | null;
   selectedTransactionId: string | null;
 
@@ -55,6 +68,7 @@ interface AmlActions {
   fetchGraph: (seedAccount?: string | null) => Promise<void>;
   fetchTransactionsPage: (options?: { cursor?: number; account?: string | null }) => Promise<void>;
   setFilterAccount: (account: string | null) => void;
+  fetchLabeledNetworks: () => Promise<void>;
 
   selectAccount: (id: string | null) => void;
   selectTransaction: (id: string | null) => void;
@@ -89,6 +103,11 @@ export const useAmlStore = create<AmlStore>()((set, get) => ({
   cursor: 0,
   limit: 25,
   filterAccount: null,
+
+  labeledNetworksStatus: "idle",
+  labeledNetworks: [],
+  labeledNetworksSourceNote: null,
+  labeledNetworksError: null,
 
   selectedAccountId: null,
   selectedTransactionId: null,
@@ -156,6 +175,23 @@ export const useAmlStore = create<AmlStore>()((set, get) => ({
     },
 
     setFilterAccount: (account) => set({ filterAccount: account }),
+
+    fetchLabeledNetworks: async () => {
+      set({ labeledNetworksStatus: "loading", labeledNetworksError: null });
+      try {
+        const result = await fetchAmlLabeledNetworks(get().baseUrl);
+        set({
+          labeledNetworksStatus: "ready",
+          labeledNetworks: result.networks,
+          labeledNetworksSourceNote: result.sourceNote,
+        });
+      } catch (error) {
+        set({
+          labeledNetworksStatus: "error",
+          labeledNetworksError: error instanceof AmlApiError ? error.message : "Unexpected error contacting the backend.",
+        });
+      }
+    },
 
     selectAccount: (id) => set({ selectedAccountId: id }),
     selectTransaction: (id) => set({ selectedTransactionId: id }),

@@ -14,8 +14,13 @@ export interface Alert {
   level: RiskLevel;
   /** The transaction whose arrival completed this pattern's evidence. */
   revealedByTransactionId: string;
-  /** 1-based position of that transaction in the replay sequence. */
-  revealedAtStep: number;
+  /**
+   * 1-based position of that transaction in the replay sequence, or `null`
+   * when the active dataset isn't a replay (live mode's one-shot snapshot
+   * has no meaningful "step") -- see `deriveAlerts`'s `isReplayPosition`
+   * option.
+   */
+  revealedAtStep: number | null;
   title: string;
   summary: string;
 }

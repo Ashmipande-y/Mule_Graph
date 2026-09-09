@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BASE_TIMEZONE_OPTIONS,
   emptyFormValues,
   generateNextTransactionId,
   localDateTimeToUtcIso,
@@ -7,7 +8,28 @@ import {
   transactionSetsEqual,
   utcIsoToDateTimeLocal,
   validateTransactionForm,
+  withBrowserTimezone,
 } from "./transactionValidation";
+
+describe("withBrowserTimezone", () => {
+  it("appends the browser-detected timezone when its offset is not already listed", () => {
+    const result = withBrowserTimezone(BASE_TIMEZONE_OPTIONS, { label: "Browser local (-08:00)", offsetMinutes: -480 });
+    expect(result).toEqual([...BASE_TIMEZONE_OPTIONS, { label: "Browser local (-08:00)", offsetMinutes: -480 }]);
+  });
+
+  it("does not add a second option sharing an offset already in the base list", () => {
+    // A machine set to IST reports the same +05:30 offset as the built-in
+    // "India Standard Time" entry -- two options with the same underlying
+    // value break Radix Select's internal by-value item tracking.
+    const result = withBrowserTimezone(BASE_TIMEZONE_OPTIONS, { label: "Browser local (+05:30)", offsetMinutes: 330 });
+    expect(result).toEqual(BASE_TIMEZONE_OPTIONS);
+    expect(result.filter((option) => option.offsetMinutes === 330)).toHaveLength(1);
+  });
+
+  it("returns the base list unchanged when there is no browser-detected option", () => {
+    expect(withBrowserTimezone(BASE_TIMEZONE_OPTIONS, null)).toEqual(BASE_TIMEZONE_OPTIONS);
+  });
+});
 
 describe("validateTransactionForm: valid entry", () => {
   it("accepts a fully valid transaction and normalizes the timestamp to UTC", () => {

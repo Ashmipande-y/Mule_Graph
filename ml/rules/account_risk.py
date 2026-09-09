@@ -96,16 +96,44 @@ def account_risk_from_findings(findings: Sequence[Finding]) -> dict[str, Account
         tx_ids[account].update(tx_ids_for_account)
 
     for finding in findings:
-        touch(finding.source_account, "source", finding, finding.fan_out_transaction_ids)
-        # intermediary_accounts, fan_out_transaction_ids, and convergence_transaction_ids
-        # are built (in detector.py) as parallel tuples over the same "converging"
-        # order, so each intermediary's own evidence is the same-index pair, not
-        # every transaction in the finding.
-        for intermediary, fan_out_tx_id, convergence_tx_id in zip(
-            finding.intermediary_accounts, finding.fan_out_transaction_ids, finding.convergence_transaction_ids
-        ):
-            touch(intermediary, "intermediary", finding, (fan_out_tx_id, convergence_tx_id))
-        touch(finding.collector_account, "collector", finding, finding.convergence_transaction_ids)
+        if finding.pattern == "fan_out_convergence":
+            touch(finding.source_account, "source", finding, finding.fan_out_transaction_ids)
+            # intermediary_accounts, fan_out_transaction_ids, and convergence_transaction_ids
+            # are built (in detector.py) as parallel tuples over the same "converging"
+            # order, so each intermediary's own evidence is the same-index pair, not
+            # every transaction in the finding.
+            for intermediary, fan_out_tx_id, convergence_tx_id in zip(
+                finding.intermediary_accounts, finding.fan_out_transaction_ids, finding.convergence_transaction_ids
+            ):
+                touch(intermediary, "intermediary", finding, (fan_out_tx_id, convergence_tx_id))
+            touch(finding.collector_account, "collector", finding, finding.convergence_transaction_ids)
+        elif finding.pattern == "circular_transfer":
+            originator = finding.source_account
+            for acc in finding.involved_accounts:
+                role = "cycle_originator" if acc == originator else "cycle_intermediary"
+                touch(acc, role, finding, finding.evidence_transaction_ids)
+        elif finding.pattern == "rapid_forwarding":
+            originator = finding.source_account
+            recipient = finding.collector_account
+            for acc in finding.involved_accounts:
+                if acc == originator:
+                    role = "chain_originator"
+                elif acc == recipient:
+                    role = "chain_recipient"
+                else:
+                    role = "chain_intermediary"
+                touch(acc, role, finding, finding.evidence_transaction_ids)
+        elif finding.pattern == "fan_in_collector":
+            touch(finding.collector_account, "collector", finding, finding.evidence_transaction_ids)
+            for sender in finding.intermediary_accounts:
+                touch(sender, "fan_in_sender", finding, finding.evidence_transaction_ids)
+        elif finding.pattern == "dormant_reactivation":
+            touch(finding.source_account, "dormant_account", finding, finding.evidence_transaction_ids)
+            for counterparty in finding.intermediary_accounts:
+                touch(counterparty, "reactivation_counterparty", finding, finding.evidence_transaction_ids)
+        else:
+            for acc in finding.involved_accounts:
+                touch(acc, "involved", finding, finding.evidence_transaction_ids)
 
     return {
         account: AccountRisk(

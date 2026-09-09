@@ -7,9 +7,11 @@ output.
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 RiskLevel = Literal["UNASSESSED", "LOW", "MEDIUM", "HIGH"]
 
@@ -29,9 +31,90 @@ class Edge(BaseModel):
     timestamp: str
 
 
+class GraphFinding(BaseModel):
+    """A network-level piece of evidence backing one or more nodes' risk
+    fields -- the same shape `ml/rules/detector.py::Finding.to_dict()`
+    produces, serialized in full (not reconstructed from risk scores alone)
+    so the frontend can derive real alerts/cases from it instead of treating
+    `GET /api/graph` as risk-only. See `backend/docs/integration-contract.md`
+    (2026-09-09 entry on this field)."""
+
+    pattern: str
+    source_account: str
+    collector_account: str
+    intermediary_accounts: list[str]
+    fan_out_transaction_ids: list[str]
+    convergence_transaction_ids: list[str]
+    window_start: str
+    window_end: str
+    score: float
+    score_method: str
+    evidence: dict
+
+
 class GraphResponse(BaseModel):
     nodes: list[Node]
     edges: list[Edge]
+    findings: list[GraphFinding] = []
+
+
+# ---------------------------------------------------------------------------
+# POST /api/assess -- stateless network-context risk assessment for a
+# caller-supplied canonical-demo transaction set (whole-rupee `amount`, same
+# schema as Edge/data/demo_transactions.json -- NOT the AML dataset's
+# `amount_paise` schema below). Implements
+# frontend/docs/assessment-endpoint-contract.md. See app/api/assess.py.
+# ---------------------------------------------------------------------------
+
+
+class AssessTransactionIn(BaseModel):
+    """One transaction in the canonical demo's own schema. `amount` is
+    strict to avoid the same silent-coercion class of bug fixed for the AML
+    schema above: a JSON boolean or a fractional/string number must be
+    rejected, never quietly turned into an integer."""
+
+    id: str = Field(min_length=1)
+    sender: str = Field(min_length=1)
+    receiver: str = Field(min_length=1)
+    amount: int = Field(
+        gt=0,
+        strict=True,
+        description="Integer INR rupees (not paise -- this is the canonical demo, not the AML dataset).",
+    )
+    timestamp: str = Field(min_length=1, description="Full UTC ISO 8601, second precision, e.g. 2026-01-01T10:00:00Z.")
+
+
+class AssessRequest(BaseModel):
+    transactions: list[AssessTransactionIn] = Field(min_length=1, max_length=500)
+
+
+class AssessAccountResult(BaseModel):
+    account_id: str
+    risk_score: float | None
+    risk_level: RiskLevel
+    roles: list[str]
+    finding_count: int
+    evidence_transaction_ids: list[str]
+
+
+class AssessPatternResult(BaseModel):
+    pattern: str
+    source_account: str
+    collector_account: str
+    intermediary_accounts: list[str]
+    score: float
+    score_method: str
+    evidence: dict
+
+
+class AssessResponse(BaseModel):
+    status: Literal["completed", "partial", "failed"] = "completed"
+    assessed_at: str
+    model_mode: Literal["rules"] = "rules"
+    accounts: list[AssessAccountResult]
+    accounts_requiring_review: list[str]
+    patterns: list[AssessPatternResult]
+    findings: list[GraphFinding] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):
@@ -66,6 +149,29 @@ class XgbScoreResponse(BaseModel):
 # backend/docs/aml-integration-contract.md.
 # ---------------------------------------------------------------------------
 
+AML_TIMESTAMP_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z$"
+_AML_TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def is_valid_aml_timestamp(value: str) -> bool:
+    """True only for a real minute-precision UTC calendar date/time.
+
+    `AML_TIMESTAMP_PATTERN` alone checks digit shape, not calendar validity
+    -- "2022-02-30T25:99:00Z" matches it (2 digits in every slot) but is not
+    a real date/time. An actual `strptime` parse is required to catch
+    invalid months, days-per-month (including leap years), hours, and
+    minutes. Shared by `AmlTransactionIn` (below) and
+    `app.services.aml_dataset.validate_record` so both the API request path
+    and the CSV dataset-loading path apply the identical rule.
+    """
+    if not re.match(AML_TIMESTAMP_PATTERN, value):
+        return False
+    try:
+        datetime.strptime(value, _AML_TIMESTAMP_FORMAT)
+    except ValueError:
+        return False
+    return True
+
 
 class AmlTransactionIn(BaseModel):
     """One transfer in the AML dataset's own schema -- used both for the
@@ -75,17 +181,44 @@ class AmlTransactionIn(BaseModel):
     id: str = Field(min_length=1)
     sender: str = Field(min_length=1)
     receiver: str = Field(min_length=1)
-    amount_paise: int = Field(gt=0, description="Integer minor units. Divide by 100 for INR.")
+    amount_paise: int = Field(
+        gt=0,
+        strict=True,
+        description=(
+            "Integer minor units. Divide by 100 for INR. Strict: rejects booleans "
+            "(bool is an int subclass in Python), fractional numbers, and numeric "
+            "strings -- only a genuine JSON integer is accepted."
+        ),
+    )
     currency: Literal["INR"] = "INR"
     timestamp: str = Field(
-        pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z$",
+        pattern=AML_TIMESTAMP_PATTERN,
         description="Minute-precision UTC ISO 8601 (seconds fixed at '00'), matching the dataset's own resolution.",
     )
     payment_format: Literal["ACH", "Wire"]
 
+    @field_validator("timestamp")
+    @classmethod
+    def _timestamp_must_be_a_real_calendar_date(cls, value: str) -> str:
+        if not is_valid_aml_timestamp(value):
+            raise ValueError(
+                "not a real calendar date/time (check month/day-of-month/hour/minute ranges); "
+                "e.g. 2022-02-30T00:00:00Z and 2022-01-01T25:00:00Z are both rejected"
+            )
+        return value
+
 
 class AmlTransactionOut(AmlTransactionIn):
     """Same shape as the input, echoed back in list/graph responses."""
+
+    is_labeled_laundering: bool = Field(
+        default=False,
+        description=(
+            "The IBM AMLworld benchmark's own ground-truth is_laundering=1 label for this id "
+            "(data/aml/transfer_labels_and_splits.csv) -- NOT ml/rules or ml/aml_baseline output. "
+            "Always false for a freshly session-committed transaction. Computed server-side; not client-settable."
+        ),
+    )
 
 
 class AmlDatasetSummaryResponse(BaseModel):
@@ -137,6 +270,23 @@ class AmlGraphResponse(BaseModel):
     seed_account: str | None
     rules_findings: list[AmlRulesFinding]
     dataset_label: Literal["IBM synthetic AML benchmark"] = "IBM synthetic AML benchmark"
+
+
+class AmlLabeledNetwork(BaseModel):
+    """One real, benchmark-labeled neighborhood -- discovered from
+    data/aml/transfer_labels_and_splits.csv ground truth, not ml/rules. See
+    AmlLabeledNetworksResponse.source_note."""
+
+    seed_account: str
+    labeled_laundering_transaction_count: int
+    account_count: int
+    edge_count: int
+    ml_rules_risk_level: RiskLevel = "UNASSESSED"
+
+
+class AmlLabeledNetworksResponse(BaseModel):
+    source_note: str
+    networks: list[AmlLabeledNetwork]
 
 
 class AmlAssessRequest(BaseModel):

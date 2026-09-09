@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CANONICAL_TRANSACTIONS } from "@/lib/services/dataSource";
-import { buildGraphSnapshot } from "./graphBuilder";
+import { buildGraphSnapshot, graphSnapshotToTransactions } from "./graphBuilder";
 import { deriveAlerts } from "./alerts";
 import { computeNetworkMetrics } from "./metrics";
 import { deriveCases } from "./cases";
@@ -74,6 +74,19 @@ describe("deriveCases", () => {
   it("derives zero cases when no finding exists yet", () => {
     const { findings } = buildGraphSnapshot(CANONICAL_TRANSACTIONS.slice(0, 4));
     expect(deriveCases(findings)).toHaveLength(0);
+  });
+});
+
+describe("graphSnapshotToTransactions", () => {
+  it("round-trips a graph's edges back into the exact transaction shape that produced it", () => {
+    const { graph } = buildGraphSnapshot(CANONICAL_TRANSACTIONS);
+    const recovered = graphSnapshotToTransactions(graph);
+    const bySortedId = (list: readonly { id: string }[]) => [...list].sort((a, b) => (a.id < b.id ? -1 : 1));
+    expect(bySortedId(recovered)).toEqual(bySortedId(CANONICAL_TRANSACTIONS));
+  });
+
+  it("produces an empty list for an empty graph", () => {
+    expect(graphSnapshotToTransactions({ nodes: [], edges: [] })).toEqual([]);
   });
 });
 

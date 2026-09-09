@@ -17,6 +17,7 @@ import {
   PAYMENT_FORMATS,
   amlTransactionsEqual,
   validateAmlForm,
+  withBrowserTimezone,
   type AmlFormErrors,
   type AmlFormValues,
 } from "@/lib/services/amlTransactionValidation";
@@ -45,7 +46,7 @@ export function AmlTransactionDrawer({ open, onOpenChange, knownAccountIds, exis
   const [values, setValues] = useState<AmlFormValues>(() => emptyAmlFormValues({ id: generateNextAmlTransactionId(existingIds) }));
   const [errors, setErrors] = useState<AmlFormErrors>({});
   const browserTimezone = useBrowserTimezoneOption();
-  const timezoneOptions = useMemo(() => (browserTimezone ? [...BASE_TIMEZONE_OPTIONS, browserTimezone] : BASE_TIMEZONE_OPTIONS), [browserTimezone]);
+  const timezoneOptions = useMemo(() => withBrowserTimezone(BASE_TIMEZONE_OPTIONS, browserTimezone), [browserTimezone]);
 
   const isStale = draftTransaction !== null && assessedTransaction !== null && !amlTransactionsEqual(draftTransaction, assessedTransaction);
 
