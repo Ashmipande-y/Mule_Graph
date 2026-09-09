@@ -1,0 +1,61 @@
+# Applies to backend/Dockerfile when built with repo root as context
+# (docker compose -f backend/compose.yaml ...). Allowlist strategy: ignore
+# everything, then re-include only what the image actually needs, so a
+# secret or dataset added later is excluded by default rather than by
+# omission. Order matters (last matching rule wins, gitignore-style): the
+# blanket excludes below come first so a later, more specific `!` can win
+# over them where the image genuinely needs one file back.
+
+*
+
+# --- blanket excludes (may be selectively re-included below) ---
+.git
+.git/**
+**/node_modules
+**/node_modules/**
+**/*.parquet
+**/.env
+**/*.joblib
+**/*.pt
+**/*.pth
+
+# --- backend application code ---
+!backend
+!backend/**
+backend/.venv
+backend/.venv/**
+backend/.env
+backend/.pytest_cache
+backend/.pytest_cache/**
+backend/**/__pycache__
+backend/**/__pycache__/**
+backend/**/*.pyc
+
+# --- canonical runtime demo data only (not the frontend reference fixture) ---
+!data
+!data/demo_transactions.json
+
+# --- ML rules modules only (not training code beyond xgb_baseline's own
+# source, datasets, or ad-hoc artifacts) ---
+!ml
+!ml/rules
+!ml/rules/**
+ml/rules/**/__pycache__
+ml/rules/**/__pycache__/**
+ml/rules/**/*.pyc
+
+# --- ML xgb_baseline: source only, not its own tests, not the raw training
+# dataset (blocked above by **/*.parquet regardless of any path it lives
+# at), never re-derived/retrained inside the image ---
+!ml/xgb_baseline
+!ml/xgb_baseline/**
+ml/xgb_baseline/tests
+ml/xgb_baseline/tests/**
+ml/xgb_baseline/**/__pycache__
+ml/xgb_baseline/**/__pycache__/**
+ml/xgb_baseline/**/*.pyc
+
+# --- exactly one trained model artifact -- wins over the **/*.joblib
+# exclude above because it's more specific and comes later ---
+!ml/models
+!ml/models/xgb_baseline.joblib

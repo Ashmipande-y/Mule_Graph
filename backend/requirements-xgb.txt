@@ -1,0 +1,15 @@
+# Optional dependencies for POST /api/xgb-score (backend/app/api/xgb_score.py)
+# only. Not required for /health or /api/graph -- see
+# backend/app/adapters/xgb_baseline.py's docstring: these are imported
+# lazily, on first call to that endpoint, not at process startup.
+#
+# Exact versions match ml/requirements.txt (the environment the model was
+# actually trained and verified in -- see ml/docs/stage2-xgboost-baseline.md).
+-r requirements.txt
+xgboost==3.4.1
+pandas==3.0.5
+numpy==2.5.3
+scipy==1.18.1
+pyarrow==25.0.1
+scikit-learn==1.9.0
+joblib==1.6.0

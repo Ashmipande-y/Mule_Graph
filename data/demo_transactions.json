@@ -1,0 +1,51 @@
+[
+  {
+    "id": "TX_001",
+    "sender": "ACC_VICTIM",
+    "receiver": "ACC_A",
+    "amount": 50000,
+    "timestamp": "2026-01-01T10:00:00Z"
+  },
+  {
+    "id": "TX_002",
+    "sender": "ACC_A",
+    "receiver": "ACC_B",
+    "amount": 15000,
+    "timestamp": "2026-01-01T10:00:04Z"
+  },
+  {
+    "id": "TX_003",
+    "sender": "ACC_A",
+    "receiver": "ACC_C",
+    "amount": 14000,
+    "timestamp": "2026-01-01T10:00:07Z"
+  },
+  {
+    "id": "TX_004",
+    "sender": "ACC_A",
+    "receiver": "ACC_D",
+    "amount": 16000,
+    "timestamp": "2026-01-01T10:00:10Z"
+  },
+  {
+    "id": "TX_005",
+    "sender": "ACC_B",
+    "receiver": "ACC_X",
+    "amount": 13000,
+    "timestamp": "2026-01-01T10:00:15Z"
+  },
+  {
+    "id": "TX_006",
+    "sender": "ACC_C",
+    "receiver": "ACC_X",
+    "amount": 12000,
+    "timestamp": "2026-01-01T10:00:18Z"
+  },
+  {
+    "id": "TX_007",
+    "sender": "ACC_D",
+    "receiver": "ACC_X",
+    "amount": 14000,
+    "timestamp": "2026-01-01T10:00:21Z"
+  }
+]

@@ -1,0 +1,18 @@
+# Stage 2 (xgb_baseline) dependencies only. ml/rules needs none of this --
+# it runs on the standard library alone with the system Python.
+#
+# Setup (from repo root):
+#   python -m venv ml/.venv
+#   ml/.venv/Scripts/python.exe -m pip install -r ml/requirements.txt
+#
+# Exact versions actually installed and used to produce the results in
+# ml/docs/handoffs/stage2-xgboost-baseline.md, via `pip freeze` on
+# 2026-09-07 (CPU-only; no CUDA/GPU build of xgboost is installed or used --
+# see ml/docs/ml/environment.md for why GPU support isn't assumed).
+xgboost==3.4.1
+pandas==3.0.5
+numpy==2.5.3
+scipy==1.18.1
+pyarrow==25.0.1
+scikit-learn==1.9.0
+joblib==1.6.0

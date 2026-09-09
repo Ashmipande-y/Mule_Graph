@@ -1,0 +1,28 @@
+node_modules/
+__pycache__/
+.DS_Store
+
+# Python environments
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# ML artifacts (generated, not source-controlled)
+ml/data/raw/
+ml/checkpoints/
+ml/models/*.pt
+ml/models/*.pth
+ml/models/*.joblib
+ml/models/*.xgb
+*.ipynb_checkpoints/
+
+# OS/editor
+Thumbs.db
+.idea/
+.vscode/

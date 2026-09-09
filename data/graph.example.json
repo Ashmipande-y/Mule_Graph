@@ -1,0 +1,19 @@
+{
+  "nodes": [
+    { "id": "ACC_A", "label": "Account A", "risk_score": null, "risk_level": "UNASSESSED" },
+    { "id": "ACC_B", "label": "Account B", "risk_score": null, "risk_level": "UNASSESSED" },
+    { "id": "ACC_C", "label": "Account C", "risk_score": null, "risk_level": "UNASSESSED" },
+    { "id": "ACC_D", "label": "Account D", "risk_score": null, "risk_level": "UNASSESSED" },
+    { "id": "ACC_VICTIM", "label": "Victim", "risk_score": null, "risk_level": "UNASSESSED" },
+    { "id": "ACC_X", "label": "Collector X", "risk_score": null, "risk_level": "UNASSESSED" }
+  ],
+  "edges": [
+    { "id": "TX_001", "source": "ACC_VICTIM", "target": "ACC_A", "amount": 50000, "timestamp": "2026-01-01T10:00:00Z" },
+    { "id": "TX_002", "source": "ACC_A", "target": "ACC_B", "amount": 15000, "timestamp": "2026-01-01T10:00:04Z" },
+    { "id": "TX_003", "source": "ACC_A", "target": "ACC_C", "amount": 14000, "timestamp": "2026-01-01T10:00:07Z" },
+    { "id": "TX_004", "source": "ACC_A", "target": "ACC_D", "amount": 16000, "timestamp": "2026-01-01T10:00:10Z" },
+    { "id": "TX_005", "source": "ACC_B", "target": "ACC_X", "amount": 13000, "timestamp": "2026-01-01T10:00:15Z" },
+    { "id": "TX_006", "source": "ACC_C", "target": "ACC_X", "amount": 12000, "timestamp": "2026-01-01T10:00:18Z" },
+    { "id": "TX_007", "source": "ACC_D", "target": "ACC_X", "amount": 14000, "timestamp": "2026-01-01T10:00:21Z" }
+  ]
+}

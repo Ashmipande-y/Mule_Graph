@@ -1,0 +1,117 @@
+{
+  "trained_at_utc": "2026-09-07T17:36:51Z",
+  "feature_columns": [
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+    "V7",
+    "V8",
+    "V9",
+    "V10",
+    "V11",
+    "V12",
+    "V13",
+    "V14",
+    "V15",
+    "V16",
+    "V17",
+    "V18",
+    "V19",
+    "V20",
+    "V21",
+    "V22",
+    "V23",
+    "V24",
+    "V25",
+    "V26",
+    "V27",
+    "V28",
+    "Amount",
+    "hour_of_window"
+  ],
+  "label_column": "Class",
+  "label_mapping": {
+    "0": "legitimate",
+    "1": "fraud"
+  },
+  "seed": 42,
+  "split_description": {
+    "method": "chronological, no shuffling, no stratification",
+    "train_fraction": 0.6,
+    "validation_fraction": 0.2,
+    "test_fraction": 0.2,
+    "evaluation_style": "inductive (temporal): validation and test transactions all occur strictly after every training transaction within the dataset's two-day window",
+    "row_counts": {
+      "train": 170884,
+      "validation": 56961,
+      "test": 56962
+    },
+    "fraud_counts": {
+      "train": 360,
+      "validation": 57,
+      "test": 75
+    }
+  },
+  "dataset_provenance": {
+    "source": "OpenML dataset id 1597 ('creditcard')",
+    "source_url": "https://www.openml.org/search?type=data&id=1597",
+    "download_url": "https://data.openml.org/datasets/0000/1597/dataset_1597.pq",
+    "license": "Public (as recorded by OpenML)",
+    "original_citation": "Andrea Dal Pozzolo, Olivier Caelen, Reid A. Johnson, Gianluca Bontempi, 'Calibrating Probability with Undersampling for Unbalanced Classification', IEEE Symposium on Computational Intelligence and Data Mining (CIDM), 2015",
+    "domain": "real (not synthetic) European credit-card transactions, September 2013",
+    "not_the_mulegraph_domain": "This is card-payment fraud, not account-to-account money-laundering / mule-network fraud, and has no account graph structure at all.",
+    "verified_row_count": 284807,
+    "verified_fraud_count": 492,
+    "verified_md5": "1593844f40edbdabaf5bddec4649e1c4"
+  },
+  "threshold": 0.9500000000000001,
+  "threshold_selection": "argmax F1 on validation predictions only; never on test",
+  "validation_metrics": {
+    "threshold": 0.9500000000000001,
+    "precision": 0.9333333333333333,
+    "recall": 0.7368421052631579,
+    "f1": 0.8235294117647058,
+    "pr_auc": 0.788701759058331,
+    "roc_auc": 0.9748147695965627,
+    "roc_auc_undefined_reason": null,
+    "support_positive": 57,
+    "support_negative": 56904,
+    "confusion_matrix": [
+      [
+        56901,
+        3
+      ],
+      [
+        15,
+        42
+      ]
+    ]
+  },
+  "test_metrics": {
+    "threshold": 0.9500000000000001,
+    "precision": 0.8888888888888888,
+    "recall": 0.7466666666666667,
+    "f1": 0.8115942028985508,
+    "pr_auc": 0.7951396365387486,
+    "roc_auc": 0.9693628890021739,
+    "roc_auc_undefined_reason": null,
+    "support_positive": 75,
+    "support_negative": 56887,
+    "confusion_matrix": [
+      [
+        56880,
+        7
+      ],
+      [
+        19,
+        56
+      ]
+    ]
+  },
+  "xgboost_version": "3.4.1",
+  "python_version": "3.14.6",
+  "not_a_calibrated_probability_note": "predict_proba output is the model's own probability estimate, which IS a genuine model output (unlike ml/rules' heuristic score) but has not been separately calibrated (e.g. via Platt scaling or isotonic regression) -- treat it as a ranking score unless calibration is added later."
+}
