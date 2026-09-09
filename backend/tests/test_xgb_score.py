@@ -47,6 +47,25 @@ def test_xgb_score_returns_503_when_model_unavailable(client, monkeypatch):
     assert "detail" in resp.json()
 
 
+def test_cors_preflight_allows_post_for_xgb_score(client):
+    # A real browser preflights any POST carrying a JSON body before sending
+    # it. curl (used elsewhere to "verify" this endpoint) never preflights,
+    # so a CORSMiddleware misconfiguration here is invisible to curl-only
+    # checks but breaks the endpoint for every actual browser caller -- see
+    # backend/docs/integration-contract.md.
+    resp = client.options(
+        "/api/xgb-score",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert "POST" in resp.headers.get("access-control-allow-methods", "")
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
 def test_graph_and_health_unaffected_by_xgb_route(client):
     assert client.get("/health").status_code == 200
     assert client.get("/api/graph").status_code == 200

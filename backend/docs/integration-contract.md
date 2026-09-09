@@ -148,3 +148,52 @@ test_xgb_score.py` asserts the live endpoint reproduces these exactly, and
 `backend/scripts/demo_xgb_score.py` does the same against a running server
 for manual demoing (`python backend/scripts/demo_xgb_score.py`). See
 `backend/examples/README.md` for provenance and usage.
+
+## `CORS_ORIGINS` default widened to include `http://127.0.0.1:3000` (2026-09-09)
+
+While connecting the frontend to this live backend, `POST`/`GET` requests
+from a frontend opened at `http://127.0.0.1:3000` (e.g. via this repo's own
+`compose.yaml`/`frontend/compose.yaml`, which publish to `127.0.0.1`, not
+`localhost`) were silently rejected by CORS: a browser treats `localhost`
+and `127.0.0.1` as different origins even though both resolve to loopback,
+and the original default only allow-listed `http://localhost:3000`.
+
+`backend/app/config.py`'s `DEFAULT_CORS_ORIGINS` now allow-lists both
+`http://localhost:3000` and `http://127.0.0.1:3000` out of the box (still
+overridable via `CORS_ORIGINS`, still comma-separated, still exact-match —
+no wildcarding introduced). `backend/compose.yaml` and the repo-root
+`compose.yaml` set `CORS_ORIGINS` explicitly to the same two-origin value.
+This is additive only: any origin that was allowed before is still allowed;
+nothing that was previously rejected is now silently trusted beyond this
+one additional, equally-local origin.
+
+## `CORSMiddleware allow_methods` widened to include `POST` (2026-09-09)
+
+`POST /api/xgb-score` was added and connected to the frontend, but
+`app/main.py`'s `CORSMiddleware` was still configured with
+`allow_methods=["GET"]` from Stage 1, when only `GET /health`/`GET
+/api/graph` existed. A real browser preflights any POST request carrying a
+JSON body (`Content-Type: application/json` is not a CORS-simple content
+type) with an `OPTIONS` request; Starlette's `CORSMiddleware` responds to
+that preflight based on `allow_methods`, and since `POST` was not listed,
+the preflight came back `400 Bad Request` with `Access-Control-Allow-
+Methods: GET`, so the browser aborted the actual `POST /api/xgb-score`
+request before it was ever sent — the endpoint's own handler was never
+reached and never had a chance to work.
+
+**Why this was invisible to prior verification:** `curl` and this project's
+own `backend/scripts/demo_xgb_score.py` never send a real preflight — they
+just issue the `POST` directly and inspect the response, which still
+carries `Access-Control-Allow-Origin` (Starlette adds it to the actual
+response regardless of `allow_methods`). Every curl-based check in
+`backend/README.md` and `backend/docs/handoffs/xgb-score-endpoint.md`
+genuinely passed; a real browser would not have.
+
+`allow_methods` is now `["GET", "POST"]` — the exact set of HTTP methods
+this API actually uses, not a wildcard. `backend/tests/
+test_xgb_score.py::test_cors_preflight_allows_post_for_xgb_score` sends a
+real preflight (`OPTIONS` with `Access-Control-Request-Method: POST`) and
+asserts it succeeds with `POST` in `Access-Control-Allow-Methods`. Add any
+future non-GET method to this list the same way, and add the same kind of
+preflight test alongside it — a curl/TestClient `.post()` check alone will
+not catch a missing entry here.

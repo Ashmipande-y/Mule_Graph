@@ -1,0 +1,33 @@
+# Run from frontend/: docker compose up --build -d
+# Build context is frontend/ itself -- this service is self-contained (see
+# Dockerfile) and needs nothing from the repository root.
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Defaults to the bundled, replayable demo dataset (see
+      # lib/services/dataSource.ts) -- no backend connection is required for
+      # this to work. The "Live API" toggle in the UI additionally supports
+      # fetching a real backend's /api/graph; if that backend also runs in
+      # Docker on the same host, reach it via the host's published port
+      # (e.g. http://host.docker.internal:8000) since containers don't share
+      # localhost.
+      NODE_ENV: production
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped

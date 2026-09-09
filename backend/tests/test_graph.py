@@ -175,6 +175,15 @@ def test_cors_allows_configured_frontend_origin(client):
     assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
 
+def test_cors_allows_127_0_0_1_loopback_variant(client):
+    # A browser treats "localhost" and "127.0.0.1" as different origins even
+    # though both resolve to loopback -- both must be allowed by default so
+    # the frontend works regardless of which one it's opened through (see
+    # backend/docs/integration-contract.md).
+    resp = client.get("/api/graph", headers={"Origin": "http://127.0.0.1:3000"})
+    assert resp.headers.get("access-control-allow-origin") == "http://127.0.0.1:3000"
+
+
 def test_cors_rejects_other_origin(client):
     resp = client.get("/api/graph", headers={"Origin": "http://evil.example"})
     assert "access-control-allow-origin" not in resp.headers

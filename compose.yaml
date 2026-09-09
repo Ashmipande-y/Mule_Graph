@@ -1,0 +1,40 @@
+# Single combined container: build context is the repository root. Run
+# from the repo root:
+#
+#   docker compose up --build -d
+#
+# This starts ONE container running both the FastAPI backend (port 8000)
+# and the Next.js frontend (port 3000) as two processes supervised by
+# docker-entrypoint.sh -- see Dockerfile's top comment for why. For two
+# separate containers instead, use backend/compose.yaml and
+# frontend/compose.yaml (each already builds and runs independently).
+
+services:
+  mulegraph:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Same-container or not, the frontend (port 3000) and backend (port
+      # 8000) are still different origins from the browser's point of view,
+      # so CORS_ORIGINS is still required here. Both loopback forms are
+      # listed since ports above publish to 127.0.0.1 but a browser may
+      # just as easily be pointed at http://localhost:3000.
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      LOG_LEVEL: INFO
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2); u.urlopen('http://127.0.0.1:3000/', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

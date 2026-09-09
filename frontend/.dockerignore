@@ -1,0 +1,26 @@
+# See frontend/Dockerfile: this is a multi-stage build that installs
+# dependencies and builds inside the image, so none of the local,
+# environment-specific, or generated artifacts below need to (or should)
+# cross into the build context.
+
+node_modules
+.next
+.git
+npm-debug.log*
+
+# env files (never bake secrets into an image layer)
+.env
+.env.*
+!.env.example
+
+# editor/OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# docs and local-only project files not needed at runtime
+README.md
+AGENTS.md
+CLAUDE.md
+*.md

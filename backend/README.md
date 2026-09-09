@@ -176,7 +176,7 @@ Canonical labels: ACC_VICTIM = Victim; ACC_A/B/C/D = Account A/B/C/D; ACC_X = Co
 
 Keep every score null and every risk level UNASSESSED in this stage. Do not run the detector during static graph conversion. **(Deviated 2026-09-09 at the repo owner's explicit request — see the status update at the top of this file and `backend/docs/integration-contract.md`. The instruction on this line is the original Stage 1 design intent; treat the deviation as provisional pending Jatin/Ashmi review, not a reversal of this guidance.)**
 
-Read and validate the transaction file for each static graph request in this small demo. Resolve default paths relative to the application/repository location, independent of the shell's current directory. Configure CORS for the local frontend origin `http://localhost:3000` with an environment override.
+Read and validate the transaction file for each static graph request in this small demo. Resolve default paths relative to the application/repository location, independent of the shell's current directory. Configure CORS for the local frontend origin `http://localhost:3000` with an environment override. **(Widened 2026-09-09 to also default-allow `http://127.0.0.1:3000` — see `backend/docs/integration-contract.md`.)**
 
 ### Errors and empty data
 
@@ -323,7 +323,7 @@ Implement and document a single explicit configuration loader. Do not assume a `
 
 | Variable | Initial target | Purpose |
 | --- | --- | --- |
-| `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origins; document list syntax |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed frontend origins, comma-separated; both loopback forms allowed by default since a browser treats them as different origins (see `backend/docs/integration-contract.md`, updated 2026-09-09) |
 | `DEMO_TRANSACTIONS_PATH` | repo-relative `data/demo_transactions.json` | Static source; allow an absolute override |
 | `LOG_LEVEL` | `INFO` | Backend logging |
 | `STORAGE_MODE` | later: `memory` | Explicit runtime store selection |

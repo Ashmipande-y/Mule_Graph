@@ -1,0 +1,90 @@
+# Applies to the repo-root Dockerfile (the single combined MuleGraph
+# container), built with the repo root as context. Allowlist strategy:
+# ignore everything, then re-include only what each build stage actually
+# needs, so a stray secret, dataset, or local build artifact is excluded by
+# default rather than by omission. Order matters (last matching rule wins,
+# gitignore-style).
+
+*
+
+# --- root-level build inputs ---
+!Dockerfile
+!docker-entrypoint.sh
+
+# --- blanket excludes (may be selectively re-included below) ---
+.git
+.git/**
+**/node_modules
+**/node_modules/**
+**/.next
+**/.next/**
+**/*.parquet
+**/.env
+**/*.joblib
+**/*.pt
+**/*.pth
+**/__pycache__
+**/__pycache__/**
+**/*.pyc
+**/.venv
+**/.venv/**
+
+# --- backend: application code + dependency manifests only ---
+!backend/requirements.txt
+!backend/requirements-xgb.txt
+!backend/app
+!backend/app/**
+
+# --- canonical runtime demo data only (not the frontend reference fixture) ---
+!data
+!data/demo_transactions.json
+
+# --- IBM AML dataset: only the transfer CSV the backend reads at runtime
+# (data/aml/README.md, legacy/, and the reference/ annotated networks are
+# not needed by the running service -- they're inputs to offline prep and
+# training only) ---
+!data/aml
+!data/aml/transfers_inr.csv
+
+# --- ML rules modules only (not training code beyond xgb_baseline's/
+# aml_baseline's own source, datasets, or ad-hoc artifacts) ---
+!ml/rules
+!ml/rules/**
+!ml/xgb_baseline
+!ml/xgb_baseline/**
+ml/xgb_baseline/tests
+ml/xgb_baseline/tests/**
+!ml/aml_baseline
+!ml/aml_baseline/**
+ml/aml_baseline/tests
+ml/aml_baseline/tests/**
+
+# --- exactly two trained model artifacts -- wins over the **/*.joblib
+# exclude above because it's more specific and comes later ---
+!ml/models
+!ml/models/xgb_baseline.joblib
+!ml/models/aml_baseline.joblib
+
+# --- frontend: source needed to build the standalone server, not its own
+# node_modules/.next (excluded above -- installed and built fresh here) ---
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
+!frontend/next.config.ts
+!frontend/postcss.config.mjs
+!frontend/eslint.config.mjs
+!frontend/components.json
+!frontend/app
+!frontend/app/**
+!frontend/components
+!frontend/components/**
+!frontend/lib
+!frontend/lib/**
+!frontend/hooks
+!frontend/hooks/**
+!frontend/types
+!frontend/types/**
+!frontend/data
+!frontend/data/**
+!frontend/public
+!frontend/public/**

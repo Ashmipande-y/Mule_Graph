@@ -1,0 +1,126 @@
+{
+  "model_version": "aml_baseline_v1",
+  "trained_at_utc": "2026-09-09T12:59:29Z",
+  "feature_columns": [
+    "amount_log1p_inr",
+    "is_ach",
+    "is_wire",
+    "hour_sin",
+    "hour_cos",
+    "weekday",
+    "pair_prior_count",
+    "sender_has_prior_activity",
+    "sender_seconds_since_prior_activity",
+    "sender_out_1h_count",
+    "sender_out_1h_distinct_accounts",
+    "sender_out_1h_amount_paise",
+    "sender_in_1h_count",
+    "sender_in_1h_distinct_accounts",
+    "sender_in_1h_amount_paise",
+    "sender_out_24h_count",
+    "sender_out_24h_distinct_accounts",
+    "sender_out_24h_amount_paise",
+    "sender_in_24h_count",
+    "sender_in_24h_distinct_accounts",
+    "sender_in_24h_amount_paise",
+    "receiver_has_prior_activity",
+    "receiver_seconds_since_prior_activity",
+    "receiver_out_1h_count",
+    "receiver_out_1h_distinct_accounts",
+    "receiver_out_1h_amount_paise",
+    "receiver_in_1h_count",
+    "receiver_in_1h_distinct_accounts",
+    "receiver_in_1h_amount_paise",
+    "receiver_out_24h_count",
+    "receiver_out_24h_distinct_accounts",
+    "receiver_out_24h_amount_paise",
+    "receiver_in_24h_count",
+    "receiver_in_24h_distinct_accounts",
+    "receiver_in_24h_amount_paise"
+  ],
+  "label_column": "is_laundering",
+  "label_mapping": {
+    "0": "not_laundering",
+    "1": "laundering"
+  },
+  "seed": 42,
+  "split_description": {
+    "method": "chronological (Sep 1-6 train / Sep 7-8 validation / Sep 9-10 test), no shuffling, no stratification",
+    "row_counts": {
+      "train": {
+        "rows": 16666,
+        "positive_labels": 83,
+        "timestamp_min": "2022-09-01T00:00:00Z",
+        "timestamp_max": "2022-09-06T23:59:00Z"
+      },
+      "validation": {
+        "rows": 5345,
+        "positive_labels": 25,
+        "timestamp_min": "2022-09-07T00:00:00Z",
+        "timestamp_max": "2022-09-08T23:59:00Z"
+      },
+      "test": {
+        "rows": 5479,
+        "positive_labels": 18,
+        "timestamp_min": "2022-09-09T00:00:00Z",
+        "timestamp_max": "2022-09-10T23:59:00Z"
+      }
+    }
+  },
+  "dataset_provenance": {
+    "source": "IBM AML HI-Small v8 (Kaggle: ealtman2019/ibm-transactions-for-anti-money-laundering-aml)",
+    "prepared_view": "transfer_inr (ACH/Wire only, INR-denominated rows, chronological train/validation/test split)",
+    "domain": "synthetic account-to-account transfers -- IBM synthetic AML benchmark, NOT real UPI customer data",
+    "license": "CDLA-Sharing-1.0",
+    "see_also": "data/aml/README.md"
+  },
+  "threshold": 0.87,
+  "threshold_selection": "argmax F1 on validation predictions only; never on test",
+  "validation_metrics": {
+    "threshold": 0.87,
+    "precision": 0.6363636363636364,
+    "recall": 0.28,
+    "f1": 0.3888888888888889,
+    "pr_auc": 0.34197819676946706,
+    "roc_auc": 0.973,
+    "roc_auc_undefined_reason": null,
+    "support_positive": 25,
+    "support_negative": 5320,
+    "confusion_matrix": [
+      [
+        5316,
+        4
+      ],
+      [
+        18,
+        7
+      ]
+    ]
+  },
+  "test_metrics": {
+    "threshold": 0.87,
+    "precision": 0.6666666666666666,
+    "recall": 0.2222222222222222,
+    "f1": 0.3333333333333333,
+    "pr_auc": 0.2438017694080979,
+    "roc_auc": 0.8446051801664326,
+    "roc_auc_undefined_reason": null,
+    "support_positive": 18,
+    "support_negative": 5461,
+    "confusion_matrix": [
+      [
+        5459,
+        2
+      ],
+      [
+        14,
+        4
+      ]
+    ]
+  },
+  "xgboost_version": "3.4.1",
+  "python_version": "3.14.6",
+  "not_a_calibrated_probability_note": "predict_proba output is the model's own probability estimate, a genuine model output (unlike ml/rules' hand-defined heuristic), but has not been separately calibrated (e.g. via Platt scaling or isotonic regression) -- treat it as a ranking score, not a calibrated probability of laundering, unless calibration is added and evaluated later.",
+  "small_test_positive_count_caveat": "The test split has only 18 positive (laundering) examples. Any recall/precision figure computed from this few positives carries substantial sampling uncertainty -- a single additional true/false positive changes recall by 5.6 percentage points. Treat these test metrics as a directional signal, not a precise performance guarantee, and re-evaluate on a larger labeled set before relying on them operationally.",
+  "not_the_mulegraph_upi_domain_note": "This model is trained on IBM's synthetic AML benchmark (ACH/Wire transfers), not real UPI transaction data. It is a domain-appropriate account-graph model (unlike ml/xgb_baseline's unrelated card-fraud model), but its performance here should not be read as a claim about real-world UPI mule-detection accuracy."
+}

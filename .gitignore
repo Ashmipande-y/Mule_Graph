@@ -22,6 +22,21 @@ ml/models/*.joblib
 ml/models/*.xgb
 *.ipynb_checkpoints/
 
+# IBM AML dataset (large, regenerable via a prepare_mulegraph.py-style
+# conversion of a Kaggle download -- see data/aml/README.md, kept tracked).
+# Same treatment as ml/data/raw/: the bulk data itself is not source-controlled.
+# (A directory-level ignore can't be selectively un-ignored, hence per-extension/subdir rules.)
+data/aml/*.csv
+data/aml/*.json
+data/aml/*.txt
+data/aml/legacy/
+ml/data/aml/
+
+# Raw copy of the externally-prepared dataset package, kept locally only
+# for inspection during integration -- unused by any code path (the actual
+# runtime/training data lives in data/aml/ and ml/data/aml/splits/ above).
+ml/mulegraph-aml/
+
 # OS/editor
 Thumbs.db
 .idea/
