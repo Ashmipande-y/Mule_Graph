@@ -29,7 +29,7 @@ export function AssessmentResultPanel({
     <div className={cn("flex flex-col gap-3 rounded-md border border-border bg-panel-2 p-3", className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          {result.status === "completed" ? (
+          {result.status === "completed" && result.patterns.length === 0 ? (
             <CheckCircle2 className="size-3.5 text-status-live" aria-hidden="true" />
           ) : (
             <AlertTriangle className="size-3.5 text-risk-medium" aria-hidden="true" />
@@ -53,6 +53,14 @@ export function AssessmentResultPanel({
           {formatFullUtc(result.assessedAt)}
         </span>
       </div>
+
+      {result.status === "completed" && (
+        <p role="status" className={cn("rounded border p-2 text-sm font-medium", result.patterns.length > 0 ? "border-risk-medium/30 bg-risk-medium/10 text-risk-medium" : "border-border text-foreground")}>
+          {result.patterns.length > 0
+            ? "Suspicious activity detected — review the patterns and account evidence below."
+            : "No suspicious pattern detected by the current rules. This does not confirm that the transactions are safe."}
+        </p>
+      )}
 
       <dl className="grid grid-cols-3 gap-2 text-xs">
         <div>

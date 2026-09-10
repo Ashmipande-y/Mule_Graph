@@ -96,7 +96,7 @@ export function CustomCasesView() {
       <main className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
         <div className="mx-auto max-w-7xl space-y-5">
           <div className="grid gap-3 sm:grid-cols-3">
-            {[ ["1", "Add transactions", "Enter transfers or paste your network as JSON."], ["2", "Run assessment", "Check the network for fan-out and convergence."], ["3", "Investigate", "Open the graph or save a supported finding."] ].map(([step, title, description]) => (
+            {[ ["1", "Add transactions", "Enter transfers or paste your network as JSON."], ["2", "Run assessment", "Check the network for suspicious transfer patterns."], ["3", "Investigate", "Open the graph or save a supported finding."] ].map(([step, title, description]) => (
               <div key={step} className="flex gap-3 rounded-lg border border-border bg-panel p-4"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold">{step}</span><div><p className="text-sm font-medium">{title}</p><p className="mt-1 text-xs text-muted-foreground">{description}</p></div></div>
             ))}
           </div>
@@ -138,11 +138,11 @@ export function CustomCasesView() {
               {result && <>
                 <AssessmentResultPanel result={result} />
                 {result.status === "completed" && <Button variant="outline" onClick={viewGraph}>View in MuleGraph<ArrowRight /></Button>}
-                {result.status === "completed" && (result.findings ?? []).map((finding, index) => <div key={index} className="space-y-2 rounded-lg border border-border bg-panel p-4"><h3 className="text-sm font-semibold">{finding.sourceAccount} → {finding.collectorAccount}</h3><p className="text-xs text-muted-foreground">Fan-out and convergence · {finding.intermediaryAccounts.length} intermediaries · Evidence score {finding.score.toFixed(4)}</p><Button disabled={busy} onClick={() => void saveFinding(finding)}>{saving ? "Saving…" : "Save case & investigate"}<ArrowRight /></Button></div>)}
+                {result.status === "completed" && (result.findings ?? []).map((finding, index) => <div key={index} className="space-y-2 rounded-lg border border-border bg-panel p-4"><h3 className="text-sm font-semibold">{finding.sourceAccount} → {finding.collectorAccount}</h3><p className="text-xs text-muted-foreground">{finding.pattern.replaceAll("_", " ")} · Evidence score {finding.score.toFixed(4)}</p><Button disabled={busy} onClick={() => void saveFinding(finding)}>{saving ? "Saving…" : "Save case & investigate"}<ArrowRight /></Button></div>)}
                 {result.status === "completed" && result.patterns.length === 0 && <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">No supported pattern was detected. You can still view this network in MuleGraph. Accounts without findings remain unassessed.</p>}
               </>}
               {attemptedSave && saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
-              <p className="text-xs text-muted-foreground">Detection currently checks fan-out and convergence. Scores rank evidence strength; they are not fraud probabilities.</p>
+              <p className="text-xs text-muted-foreground">Detection checks fan-out with convergence or rapid forwarding, forwarding chains, circular transfers, fan-in, and dormant-account reactivation. Scores rank evidence strength; they are not fraud probabilities.</p>
             </section>
           </div>
         </div>

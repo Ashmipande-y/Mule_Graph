@@ -181,6 +181,24 @@ def test_assess_with_no_qualifying_pattern_returns_all_unassessed(client):
     assert all(a["risk_level"] == "UNASSESSED" and a["risk_score"] is None for a in body["accounts"])
 
 
+def test_assess_detects_fan_out_with_rapid_forwarding(client):
+    transactions = [
+        {"id": "TX_1", "sender": "ACCOUNT_A", "receiver": "ACCOUNT_B", "amount": 10000, "timestamp": "2026-09-10T10:00:00Z"},
+        {"id": "TX_2", "sender": "ACCOUNT_A", "receiver": "ACCOUNT_C", "amount": 9950, "timestamp": "2026-09-10T10:02:00Z"},
+        {"id": "TX_3", "sender": "ACCOUNT_A", "receiver": "ACCOUNT_D", "amount": 9800, "timestamp": "2026-09-10T10:04:00Z"},
+        {"id": "TX_4", "sender": "ACCOUNT_D", "receiver": "ACCOUNT_E", "amount": 9700, "timestamp": "2026-09-10T10:06:00Z"},
+    ]
+    response = client.post("/api/assess", json={"transactions": transactions})
+    assert response.status_code == 200
+    body = response.json()
+    finding = next(p for p in body["patterns"] if p["pattern"] == "fan_out_rapid_forwarding")
+    assert finding["score"] >= 0.75
+    assert finding["source_account"] == "ACCOUNT_A"
+    assert finding["collector_account"] == "ACCOUNT_E"
+    assert finding["evidence"]["pass_through_ratio"] == 0.9898
+    assert {"ACCOUNT_A", "ACCOUNT_D", "ACCOUNT_E"}.issubset(body["accounts_requiring_review"])
+
+
 def test_assess_response_has_a_real_utc_assessed_at(client):
     import datetime
 

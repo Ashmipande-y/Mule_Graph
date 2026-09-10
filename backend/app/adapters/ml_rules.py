@@ -21,7 +21,7 @@ ensure_ml_on_path()
 
 from rules.account_risk import AccountRisk, account_risk_from_findings  # noqa: E402
 from rules.detector import Finding  # noqa: E402
-from rules.replay import evaluate_at  # noqa: E402
+from rules.replay import evaluate_all_at  # noqa: E402
 from rules.transactions import Transaction, TransactionParseError  # noqa: E402
 
 __all__ = [
@@ -65,7 +65,7 @@ def evaluate_transactions(records: Sequence[dict]) -> tuple[list[Transaction], l
     if not transactions:
         return [], [], {}
     as_of = max(tx.timestamp for tx in transactions)
-    findings = evaluate_at(transactions, as_of)
+    findings = evaluate_all_at(transactions, as_of)
     account_risk = account_risk_from_findings(findings)
     return transactions, findings, account_risk
 

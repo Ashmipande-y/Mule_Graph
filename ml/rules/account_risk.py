@@ -123,6 +123,11 @@ def account_risk_from_findings(findings: Sequence[Finding]) -> dict[str, Account
                 else:
                     role = "chain_intermediary"
                 touch(acc, role, finding, finding.evidence_transaction_ids)
+        elif finding.pattern == "fan_out_rapid_forwarding":
+            touch(finding.source_account, "source", finding, finding.fan_out_transaction_ids)
+            forwarder = finding.intermediary_accounts[0]
+            touch(forwarder, "rapid_forwarder", finding, finding.evidence_transaction_ids)
+            touch(finding.collector_account, "recipient", finding, finding.convergence_transaction_ids)
         elif finding.pattern == "fan_in_collector":
             touch(finding.collector_account, "collector", finding, finding.evidence_transaction_ids)
             for sender in finding.intermediary_accounts:

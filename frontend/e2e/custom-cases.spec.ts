@@ -1,6 +1,31 @@
 import { expect, test } from "@playwright/test";
 import { BACKEND_URL } from "../playwright.config";
 
+test("imported rapid forwarding is suspicious and removing forwarding clears the finding", async ({ page }) => {
+  await page.goto("/custom-cases");
+  await page.getByRole("button", { name: "Backend connection settings" }).click();
+  await page.getByLabel("Backend base URL").fill(BACKEND_URL);
+  await page.getByRole("button", { name: "Save & test" }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Backend connection settings" }).click();
+  await page.getByText("Paste transactions as JSON", { exact: true }).click();
+  await page.getByLabel("Transaction JSON").fill(JSON.stringify([
+    { id: "TX_1", sender: "ACCOUNT_A", receiver: "ACCOUNT_B", amount: 10000, timestamp: "2026-09-10T10:00:00Z" },
+    { id: "TX_2", sender: "ACCOUNT_A", receiver: "ACCOUNT_C", amount: 9950, timestamp: "2026-09-10T10:02:00Z" },
+    { id: "TX_3", sender: "ACCOUNT_A", receiver: "ACCOUNT_D", amount: 9800, timestamp: "2026-09-10T10:04:00Z" },
+    { id: "TX_4", sender: "ACCOUNT_D", receiver: "ACCOUNT_E", amount: 9700, timestamp: "2026-09-10T10:06:00Z" },
+  ]));
+  await page.getByRole("button", { name: "Import transactions" }).click();
+  await page.getByRole("button", { name: "Run assessment", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Suspicious activity detected" })).toBeVisible();
+  await expect(page.getByText("fan_out_rapid_forwarding", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Evidence score 0.8759/)).toBeVisible();
+  await page.getByRole("button", { name: "Remove TX_4", exact: true }).click();
+  await page.getByRole("button", { name: "Run assessment", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "No suspicious pattern detected" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save case & investigate" })).toHaveCount(0);
+});
+
 test("build a custom network, assess it, display its graph and save its case", async ({ page }) => {
   await page.goto("/custom-cases");
   await expect(page.getByRole("heading", { name: "Custom Cases", exact: true })).toBeVisible();

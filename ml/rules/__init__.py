@@ -16,6 +16,7 @@ from .detector import DetectorConfig, Finding, detect_fan_out_convergence
 from .dormancy import DormancyConfig, detect_dormant_reactivation
 from .engine import RulesEngineConfig, detect_all_patterns
 from .fan_in import FanInConfig, detect_fan_in
+from .fan_out_forwarding import FanOutForwardingConfig, detect_fan_out_forwarding
 from .forwarding import ForwardingChainConfig, detect_forwarding_chains
 from .replay import evaluate_all_at, evaluate_at, observable_transactions
 from .transactions import Transaction, deduplicate_by_id, load_transactions
@@ -26,6 +27,7 @@ __all__ = [
     "DetectorConfig",
     "DormancyConfig",
     "FanInConfig",
+    "FanOutForwardingConfig",
     "Finding",
     "ForwardingChainConfig",
     "RulesEngineConfig",
@@ -36,6 +38,7 @@ __all__ = [
     "detect_circular_transfers",
     "detect_dormant_reactivation",
     "detect_fan_in",
+    "detect_fan_out_forwarding",
     "detect_fan_out_convergence",
     "detect_forwarding_chains",
     "evaluate_all_at",

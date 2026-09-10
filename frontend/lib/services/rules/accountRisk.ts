@@ -45,6 +45,16 @@ export function accountRiskFromFindings(findings: readonly Finding[]): Map<strin
   }
 
   for (const finding of findings) {
+    if (finding.pattern === "fan_out_rapid_forwarding") {
+      touch(finding.sourceAccount, "source", finding.score, finding.fanOutTransactionIds);
+      const forwarder = finding.intermediaryAccounts[0];
+      if (forwarder) touch(forwarder, "rapid_forwarder", finding.score, [
+        ...finding.fanOutTransactionIds,
+        ...finding.convergenceTransactionIds,
+      ]);
+      touch(finding.collectorAccount, "recipient", finding.score, finding.convergenceTransactionIds);
+      continue;
+    }
     touch(finding.sourceAccount, "source", finding.score, finding.fanOutTransactionIds);
     // intermediaryAccounts/fanOutTransactionIds/convergenceTransactionIds are
     // built as parallel arrays over the same "converging" order, so each

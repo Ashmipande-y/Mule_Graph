@@ -6,7 +6,7 @@
  * ml/rules/account_risk.py's module docstring.
  */
 export interface Finding {
-  pattern: "fan_out_convergence";
+  pattern: string;
   sourceAccount: string;
   collectorAccount: string;
   intermediaryAccounts: string[];
@@ -18,6 +18,7 @@ export interface Finding {
   score: number;
   scoreMethod: string;
   evidence: {
+    [key: string]: unknown;
     intermediaryRatio: number;
     amountConservation: number;
     timeCompactness: number;

@@ -25,7 +25,7 @@ export function mapApiFinding(f: ApiFinding): Finding {
     return typeof value === "number" ? value : 0;
   };
   return {
-    pattern: "fan_out_convergence",
+    pattern: f.pattern,
     sourceAccount: f.source_account,
     collectorAccount: f.collector_account,
     intermediaryAccounts: f.intermediary_accounts,
@@ -36,6 +36,7 @@ export function mapApiFinding(f: ApiFinding): Finding {
     score: f.score,
     scoreMethod: f.score_method,
     evidence: {
+      ...(f.pattern === "fan_out_convergence" ? {} : f.evidence),
       intermediaryRatio: evidenceNumber("intermediary_ratio"),
       amountConservation: evidenceNumber("amount_conservation"),
       timeCompactness: evidenceNumber("time_compactness"),

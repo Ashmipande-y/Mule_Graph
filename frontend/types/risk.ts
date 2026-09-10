@@ -14,7 +14,7 @@ export type RiskLevel = "UNASSESSED" | "LOW" | "MEDIUM" | "HIGH";
  */
 export type RiskVisualLevel = RiskLevel | "NORMAL" | "CRITICAL";
 
-export type AccountRole = "source" | "intermediary" | "collector";
+export type AccountRole = "source" | "intermediary" | "collector" | "rapid_forwarder" | "recipient";
 
 /**
  * Account-level exposure rolled up from network findings. Mirrors

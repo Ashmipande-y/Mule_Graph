@@ -20,6 +20,7 @@ from .circular import CircularConfig, detect_circular_transfers
 from .detector import DetectorConfig, Finding, detect_fan_out_convergence
 from .dormancy import DormancyConfig, detect_dormant_reactivation
 from .fan_in import FanInConfig, detect_fan_in
+from .fan_out_forwarding import FanOutForwardingConfig, detect_fan_out_forwarding
 from .forwarding import ForwardingChainConfig, detect_forwarding_chains
 from .transactions import Transaction
 
@@ -32,12 +33,14 @@ class RulesEngineConfig:
     circular: CircularConfig = field(default_factory=CircularConfig.demo_preset)
     forwarding: ForwardingChainConfig = field(default_factory=ForwardingChainConfig.demo_preset)
     fan_in: FanInConfig = field(default_factory=FanInConfig.demo_preset)
+    fan_out_forwarding: FanOutForwardingConfig = field(default_factory=FanOutForwardingConfig)
     dormancy: DormancyConfig = field(default_factory=DormancyConfig.demo_preset)
 
     enable_fan_out_convergence: bool = True
     enable_circular: bool = True
     enable_forwarding: bool = True
     enable_fan_in: bool = True
+    enable_fan_out_forwarding: bool = True
     enable_dormancy: bool = True
 
     # Suppress standalone fan-in alert when the identical evidence is already
@@ -90,6 +93,15 @@ def detect_all_patterns(
     if config.enable_fan_out_convergence:
         foc_findings = detect_fan_out_convergence(transactions, config=config.fan_out_convergence)
         all_findings.extend(foc_findings)
+
+    if config.enable_fan_out_forwarding:
+        partial_findings = detect_fan_out_forwarding(transactions, config=config.fan_out_forwarding)
+        convergence_evidence = [set(f.evidence_transaction_ids) for f in foc_findings]
+        all_findings.extend(
+            finding
+            for finding in partial_findings
+            if not any(set(finding.evidence_transaction_ids).issubset(ids) for ids in convergence_evidence)
+        )
 
     # 2. Circular Transfers
     if config.enable_circular:

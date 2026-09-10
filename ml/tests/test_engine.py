@@ -86,6 +86,46 @@ class RulesEngineTests(unittest.TestCase):
         self.assertEqual(len(findings_at_15), 1)
         self.assertEqual(findings_at_15[0].pattern, "circular_transfer")
 
+    def test_fan_out_with_rapid_forwarding_is_detected(self):
+        transactions = [
+            tx("TX_1", "ACCOUNT_A", "ACCOUNT_B", 10000, 0),
+            tx("TX_2", "ACCOUNT_A", "ACCOUNT_C", 9950, 120),
+            tx("TX_3", "ACCOUNT_A", "ACCOUNT_D", 9800, 240),
+            tx("TX_4", "ACCOUNT_D", "ACCOUNT_E", 9700, 360),
+        ]
+        findings = detect_all_patterns(transactions)
+        finding = next(f for f in findings if f.pattern == "fan_out_rapid_forwarding")
+        self.assertGreaterEqual(finding.score, 0.75)
+        self.assertEqual(finding.evidence_transaction_ids, ("TX_1", "TX_2", "TX_3", "TX_4"))
+
+    def test_two_hop_payment_without_fan_out_is_not_flagged(self):
+        transactions = [
+            tx("P1", "PERSON", "MERCHANT", 10000, 0),
+            tx("P2", "MERCHANT", "SUPPLIER", 9900, 120),
+        ]
+        self.assertEqual(detect_all_patterns(transactions), [])
+
+    def test_fan_out_forwarding_requires_timing_and_amount_evidence(self):
+        funding = [
+            tx("P1", "A", "B", 10000, 0),
+            tx("P2", "A", "C", 9950, 120),
+            tx("P3", "A", "D", 9800, 240),
+        ]
+        for amount, time in [(9700, 541), (1000, 360), (9700, 239)]:
+            with self.subTest(amount=amount, time=time):
+                self.assertEqual(detect_all_patterns(funding + [tx("P4", "D", "E", amount, time)]), [])
+        self.assertEqual(detect_all_patterns(funding), [])
+
+    def test_fan_out_forwarding_window_covers_all_evidence(self):
+        transactions = [
+            tx("P1", "A", "B", 10000, 0),
+            tx("P2", "B", "E", 9900, 60),
+            tx("P3", "A", "C", 9950, 120),
+            tx("P4", "A", "D", 9800, 240),
+        ]
+        finding = next(f for f in detect_all_patterns(transactions) if f.pattern == "fan_out_rapid_forwarding")
+        self.assertEqual(finding.window_end, transactions[-1].timestamp)
+
 
 if __name__ == "__main__":
     unittest.main()
