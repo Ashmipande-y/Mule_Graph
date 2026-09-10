@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Bot, Database, FlaskConical, LayoutDashboard, Moon, Sun, type LucideIcon } from "lucide-react";
+import { Bot, Database, FlaskConical, LayoutDashboard, Moon, Sun, SquarePlus, type LucideIcon } from "lucide-react";
 import { Brand } from "@/components/shared/Brand";
 import { SimStatusIndicator } from "@/components/shared/SimStatusIndicator";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Overview", hint: "Graph, alerts, replay", icon: LayoutDashboard },
+  { href: "/custom-cases", label: "Custom Cases", hint: "Build and assess a network", icon: SquarePlus },
   { href: "/investigator", label: "Investigator", hint: "Case-file workspace", icon: Bot },
   { href: "/aml", label: "AML Dataset", hint: "IBM AML benchmark", icon: Database },
   { href: "/tools/xgb-score", label: "Tools", hint: "Standalone XGBoost model", icon: FlaskConical },

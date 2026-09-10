@@ -45,6 +45,7 @@ interface AssessmentActions {
 
   runAssessment: (baseUrl: string, transactionsToSubmit: readonly Transaction[]) => Promise<void>;
   startNewAssessment: () => void;
+  activateResult: (result: AssessmentResult) => void;
 }
 
 type AssessmentStore = AssessmentState & { actions: AssessmentActions };
@@ -69,6 +70,10 @@ export const useAssessmentStore = create<AssessmentStore>()((set, get) => ({
   errorKind: null,
 
   actions: {
+    activateResult: (result) => {
+      pauseReplay();
+      set({ result, previousResult: null, status: "success", error: null, errorKind: null, isOpen: false });
+    },
     openWorkspace: (options) => {
       pauseReplay();
       set({ isOpen: true, formMode: options?.startAdding ? "add" : "hidden" });

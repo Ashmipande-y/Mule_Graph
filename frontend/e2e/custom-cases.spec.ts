@@ -1,0 +1,56 @@
+import { expect, test } from "@playwright/test";
+import { BACKEND_URL } from "../playwright.config";
+
+test("build a custom network, assess it, display its graph and save its case", async ({ page }) => {
+  await page.goto("/custom-cases");
+  await expect(page.getByRole("heading", { name: "Custom Cases", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Backend connection settings" }).click();
+  await page.getByLabel("Backend base URL").fill(BACKEND_URL);
+  await page.getByRole("button", { name: "Save & test" }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Backend connection settings" }).click();
+  await page.getByRole("button", { name: "Add suspicious example" }).click();
+  await expect(page.getByRole("heading", { name: "Draft transactions (7)" })).toBeVisible();
+  await page.getByRole("button", { name: "Run assessment", exact: true }).click();
+  await expect(page.getByText("Risk assessment: completed")).toBeVisible();
+  await expect(page.getByText(/Evidence score 0.9317/)).toBeVisible();
+  await page.screenshot({ path: "test-results/custom-cases.png", fullPage: true });
+  await page.getByRole("button", { name: "View in MuleGraph" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByText("Accessible account list (same data as the graph)").click();
+  await expect(page.getByRole("button", { name: /Inspect account CASE1_COLLECTOR/ })).toBeVisible();
+  await page.getByRole("link", { name: /Custom Cases/ }).click();
+  await expect(page.getByRole("heading", { name: "Draft transactions (7)" })).toBeVisible();
+  const saved = page.waitForResponse((r) => r.url().endsWith("/api/cases") && r.request().method() === "POST");
+  await page.getByRole("button", { name: "Save case & investigate" }).click();
+  expect((await saved).ok()).toBe(true);
+  await expect(page).toHaveURL(/\/investigator$/);
+  await expect(page.getByTestId("case-status")).toHaveCount(1);
+  await expect(page.getByTestId("case-status")).toHaveText("new");
+});
+
+test("manual input, editing, import errors, and removal update the draft", async ({ page }) => {
+  await page.goto("/custom-cases");
+  await page.getByRole("button", { name: "Add transaction", exact: true }).click();
+  await page.getByLabel("Transaction ID", { exact: true }).fill("MANUAL_1");
+  await page.getByLabel("Sender account", { exact: true }).fill("MY_SENDER");
+  await page.getByLabel("Receiver account", { exact: true }).fill("MY_RECEIVER");
+  await page.getByLabel("Amount (INR)").fill("1000");
+  await page.getByLabel("Date & time").fill("2026-09-10T10:00");
+  await page.getByRole("button", { name: "Add to assessment" }).click();
+  await expect(page.getByRole("heading", { name: "Draft transactions (1)" })).toBeVisible();
+  await page.getByRole("button", { name: "Edit MANUAL_1", exact: true }).click();
+  await page.getByLabel("Amount (INR)").fill("2500");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("cell", { name: "₹2,500", exact: true })).toBeVisible();
+  await page.getByText("Paste transactions as JSON", { exact: true }).click();
+  await page.getByLabel("Transaction JSON").fill('{"transactions":[{"id":"MANUAL_1","sender":"A","receiver":"B","amount":100,"timestamp":"2026-09-10T10:00:00Z"}]}');
+  await page.getByRole("button", { name: "Import transactions" }).click();
+  await expect(page.getByRole("region", { name: "Custom case input" }).getByRole("alert")).toContainText("already in use");
+  await expect(page.getByRole("heading", { name: "Draft transactions (1)" })).toBeVisible();
+  await page.getByLabel("Transaction JSON").fill('[{"id":"IMPORTED_2","sender":"B","receiver":"C","amount":200,"timestamp":"2026-09-10T10:00:01Z"}]');
+  await page.getByRole("button", { name: "Import transactions" }).click();
+  await expect(page.getByRole("heading", { name: "Draft transactions (2)" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove MANUAL_1", exact: true }).click();
+  await expect(page.getByRole("cell", { name: /MANUAL_1/ })).toHaveCount(0);
+});
